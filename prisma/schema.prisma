@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  SUPERVISOR
+  ADMIN
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  UNDER_REVIEW
+  REVISION_REQUIRED
+  COMPLETED
+}
+
+enum MemberRole {
+  LEADER
+  MEMBER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  REVISION_REQUIRED
+  ACCEPTED
+}
+
+enum FeedbackDecision {
+  COMMENT
+  REVISION_REQUIRED
+  ACCEPTED
+}
+
+enum NotificationType {
+  MEMBERSHIP
+  TASK
+  DEADLINE
+  SUBMISSION
+  FEEDBACK
+  REVISION
+  MILESTONE
+  PROJECT
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique // always stored lowercase by the service layer
+  passwordHash       String
+  role               UserRole @default(STUDENT)
+  active             Boolean  @default(true)
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  sessions           Session[]
+  memberships        ProjectMember[]
+  supervisedProjects Project[]            @relation("ProjectSupervisor")
+  createdTasks       Task[]               @relation("TaskCreator")
+  assignedTasks      Task[]               @relation("TaskAssignee")
+  submissions        Submission[]
+  uploadedVersions   SubmissionVersion[]
+  feedback           Feedback[]
+  notifications      Notification[]
+  activities         ProjectActivity[]
+  auditLogs          AuditLog[]
+  recordedMeetings   SupervisionMeeting[] @relation("MeetingRecorder")
+
+  @@index([role, active])
+}
+
+// Server-side session. `id` is the SHA-256 of the cookie token (the raw token is never stored).
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Project {
+  id             String        @id @default(cuid())
+  title          String
+  description    String        @db.Text
+  academicPeriod String? // e.g. "2026/2027 Semester 1"
+  status         ProjectStatus @default(PLANNING)
+  startDate      DateTime?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  joinCode       String        @unique
+  supervisorId   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  supervisor    User?                @relation("ProjectSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  members       ProjectMember[]
+  milestones    Milestone[]
+  tasks         Task[]
+  submissions   Submission[]
+  activities    ProjectActivity[]
+  notifications Notification[]
+  meetings      SupervisionMeeting[]
+
+  @@index([supervisorId])
+  @@index([status])
+}
+
+model ProjectMember {
+  id        String     @id @default(cuid())
+  projectId String
+  userId    String
+  role      MemberRole @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  title       String
+  description String?         @db.Text
+  dueDate     DateTime?
+  status      MilestoneStatus @default(NOT_STARTED)
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId, dueDate])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  projectId   String
+  milestoneId String?
+  title       String
+  description String       @default("") @db.Text
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  assigneeId  String?
+  creatorId   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestone Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  assignee  User?      @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator   User       @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status])
+  @@index([assigneeId, status])
+  @@index([dueDate])
+}
+
+// A logical submission; each upload/resubmission is an immutable SubmissionVersion.
+model Submission {
+  id          String           @id @default(cuid())
+  projectId   String
+  title       String
+  description String           @db.Text
+  status      SubmissionStatus @default(SUBMITTED)
+  createdById String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  project   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  versions  SubmissionVersion[]
+  feedback  Feedback[]
+
+  @@index([projectId, status])
+  @@index([createdById])
+}
+
+model SubmissionVersion {
+  id            String   @id @default(cuid())
+  submissionId  String
+  versionNumber Int
+  originalName  String
+  storageKey    String   @unique // server-generated; never derived from the user's file name
+  mimeType      String
+  sizeBytes     Int
+  sha256        String
+  note          String?  @db.Text
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  feedback   Feedback[]
+
+  @@unique([submissionId, versionNumber])
+}
+
+model Feedback {
+  id                  String           @id @default(cuid())
+  submissionId        String
+  versionId           String
+  authorId            String
+  decision            FeedbackDecision @default(COMMENT)
+  body                String           @db.Text
+  strengths           String?          @db.Text
+  areasForImprovement String?          @db.Text
+  nextSteps           String?          @db.Text
+  createdAt           DateTime         @default(now())
+
+  submission Submission        @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  version    SubmissionVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author     User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([submissionId, createdAt])
+}
+
+model SupervisionMeeting {
+  id           String   @id @default(cuid())
+  projectId    String
+  recordedById String
+  meetingAt    DateTime
+  summary      String   @db.Text
+  actionItems  String   @default("") @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recordedBy User    @relation("MeetingRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([projectId, meetingAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  projectId String?
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  link      String?
+  dedupeKey String? // prevents repeated deadline reminders
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+}
+
+// Project timeline shown to members/supervisor.
+model ProjectActivity {
+  id        String   @id @default(cuid())
+  projectId String
+  actorId   String?
+  type      String
+  message   String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+}
+
+// Security-relevant and administrative events. Never store passwords or tokens in metadata.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([actorId])
+}
+
+model RateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+}
