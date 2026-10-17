@@ -3,6 +3,7 @@ import type { UserRole } from "@prisma/client";
 import { logoutAction } from "@/app/actions/auth";
 import { label } from "@/lib/format";
 import { AccountMenu } from "./account-menu";
+import { MobileNavigation } from "./mobile-navigation";
 import { NavLink } from "./nav-link";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -39,6 +40,7 @@ export function AppShell({ user, unread, children }: { user: { name: string; rol
       </aside>
       <main className="main" id="main">
         <header className="top">
+          <MobileNavigation items={NAV[user.role]} unread={unread} />
           <span className="top-actions">
             <ThemeToggle />
             <AccountMenu name={user.name} role={label(user.role)} />

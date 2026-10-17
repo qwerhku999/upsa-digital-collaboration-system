@@ -44,9 +44,9 @@ export function Pagination({ page, pages, base, params }: { page: number; pages:
   };
   return (
     <nav className="pager" aria-label="Pagination">
-      {page > 1 ? <Link className="button ghost" href={href(page - 1)}>← Previous</Link> : <span />}
-      <span className="muted">Page {page} of {pages}</span>
-      {page < pages ? <Link className="button ghost" href={href(page + 1)}>Next →</Link> : <span />}
+      {page > 1 ? <Link className="button ghost" href={href(page - 1)}>← Previous</Link> : <span className="pager-spacer" aria-hidden="true" />}
+      <span className="muted pager-current">Page {page} of {pages}</span>
+      {page < pages ? <Link className="button ghost" href={href(page + 1)}>Next →</Link> : <span className="pager-spacer" aria-hidden="true" />}
     </nav>
   );
 }
