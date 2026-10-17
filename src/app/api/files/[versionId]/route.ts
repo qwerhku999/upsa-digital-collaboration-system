@@ -7,12 +7,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
   if (!user || user.mustChangePassword) return Response.json({ error: "Please sign in." }, { status: 401 });
   try {
     const { versionId } = await ctx.params;
-    const { version, buffer } = await getVersionDownload(user, versionId); // access re-checked on every request
+    const { version, stream } = await getVersionDownload(user, versionId); // access is checked before private storage is read
     const ascii = version.originalName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
-    return new Response(new Uint8Array(buffer), {
+    return new Response(stream, {
       headers: {
         "Content-Type": version.mimeType,
-        "Content-Length": String(buffer.length),
+        "Content-Length": String(version.sizeBytes),
         "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(version.originalName)}`,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
@@ -20,7 +20,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
     });
   } catch (e) {
     if (e instanceof AppError) return Response.json({ error: e.message }, { status: e.code === "NOT_FOUND" ? 404 : e.code === "FORBIDDEN" ? 403 : 400 });
-    console.error(e);
+    console.error("Document download failed.", e instanceof Error ? e.name : "Unknown error");
     return Response.json({ error: "Unable to download the file." }, { status: 500 });
   }
 }

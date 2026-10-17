@@ -80,7 +80,7 @@ Tests cover: registration/login/invalid credentials/rate limiting/sessions; role
 
 ## Known limitations (be upfront about these in your report)
 - **No email**: no verification or password-reset emails (no mail provider is configured). Admins can set a temporary password; users must change it at next sign-in.
-- **Local file storage** (`./storage`): no backups, no virus scanning, single machine. `src/lib/storage.ts` is the single place to swap for S3-compatible storage.
+- **Document storage**: local development uses private files in `./storage`; production on Vercel uses private Vercel Blob objects. Configure `BLOB_READ_WRITE_TOKEN` in the Vercel project’s server-side environment settings (never as a `NEXT_PUBLIC_` variable). Downloads are authorized and streamed through `/api/files/[versionId]`; Blob URLs are not exposed to clients. Existing local-file records remain readable where their files still exist, but local files from previous ephemeral Vercel instances cannot be migrated automatically.
 - **Deadline reminders** are created on the server when a user next opens the app (no background scheduler locally).
 - Joining a project is by **join code or leader invitation**; there is no approval queue.
 - One supervisor per project. Supervisors may create tasks for assigned projects; students update their own assigned task statuses.

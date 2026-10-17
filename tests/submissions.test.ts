@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { addFeedback } from "@/server/services/feedback";
 import { assignSupervisor } from "@/server/services/projects";
 import { addVersion, createSubmission, getSubmission, getVersionDownload, listSubmissions } from "@/server/services/submissions";
+import { deleteStoredFile } from "@/lib/storage";
 import { makeProject, makeUser, pdf, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -105,10 +106,23 @@ describe("file access", () => {
     const { lead, outsider, sup, otherSup, admin, p } = await setup();
     const s = await createSubmission(lead, p.id, meta, pdf());
     const v = await prisma.submissionVersion.findFirstOrThrow({ where: { submissionId: s.id } });
-    for (const who of [lead, sup, admin]) expect((await getVersionDownload(who, v.id)).buffer.toString()).toContain("%PDF");
+    for (const who of [lead, sup, admin]) {
+      const { stream } = await getVersionDownload(who, v.id);
+      expect(await new Response(stream).text()).toContain("%PDF");
+    }
     for (const who of [outsider, otherSup]) await expect(getVersionDownload(who, v.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect((await listSubmissions(outsider)).total).toBe(0);
     expect((await listSubmissions(sup)).total).toBe(1);
     expect((await listSubmissions(otherSup)).total).toBe(0);
+  });
+  it("reports a missing stored file without exposing storage details", async () => {
+    const { lead, p } = await setup();
+    const submission = await createSubmission(lead, p.id, meta, pdf());
+    const version = await prisma.submissionVersion.findFirstOrThrow({ where: { submissionId: submission.id } });
+    await deleteStoredFile(version.storageKey);
+    await expect(getVersionDownload(lead, version.id)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "The stored file is missing.",
+    });
   });
 });

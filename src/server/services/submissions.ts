@@ -14,7 +14,7 @@ export async function createSubmission(actor: Actor, projectId: string, meta: un
   if (!isStudentLevel(level)) throw forbidden("Only project members can submit documents.");
   const d = parse(submissionMetaSchema, meta);
   const info = validateUpload(file);
-  const storageKey = await saveFile(file.buffer, info.ext);
+  const storageKey = await saveFile(file.buffer, info.ext, info.mime);
   try {
     return await prisma.$transaction(async (tx) => {
       const s = await tx.submission.create({
@@ -43,7 +43,7 @@ export async function addVersion(actor: Actor, submissionId: string, note: strin
   if (!isStudentLevel(level)) throw forbidden("Only project members can upload new versions.");
   if (sub.status !== "REVISION_REQUIRED") throw invalid("A new version can only be uploaded after the supervisor requests a revision.");
   const info = validateUpload(file);
-  const storageKey = await saveFile(file.buffer, info.ext);
+  const storageKey = await saveFile(file.buffer, info.ext, info.mime);
   try {
     return await prisma.$transaction(async (tx) => {
       const last = await tx.submissionVersion.aggregate({ where: { submissionId }, _max: { versionNumber: true } });
@@ -95,16 +95,12 @@ export async function getSubmission(actor: Actor, id: string) {
   return { submission, project: { id: project.id, title: project.title }, level };
 }
 
-/** Authorization is re-checked on every download; file names on disk are random and never exposed. */
+/** Authorization is re-checked before reading storage; blob URLs never leave the server. */
 export async function getVersionDownload(actor: Actor, versionId: string) {
   const v = await prisma.submissionVersion.findUnique({ where: { id: versionId }, include: { submission: { select: { projectId: true } } } });
   if (!v) throw notFound("File not found.");
   await getProjectAccess(actor, v.submission.projectId);
-  let buffer: Buffer;
-  try {
-    buffer = await readStoredFile(v.storageKey);
-  } catch {
-    throw notFound("The stored file is missing.");
-  }
-  return { version: v, buffer };
+  const stream = await readStoredFile(v.storageKey);
+  if (!stream) throw notFound("The stored file is missing.");
+  return { version: v, stream };
 }
