@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createMilestone, setMilestoneStatus } from "@/server/services/milestones";
-import { listProjects, addMemberByEmail, assignSupervisor, createProject, getProject, joinByCode, removeMember, transitionProject, updateProject } from "@/server/services/projects";
+import { listProjects, addMemberByEmail, assignSupervisor, createProject, createProjectCategory, getProject, joinByCode, removeMember, transitionProject, updateProject } from "@/server/services/projects";
 import { createTask, setTaskStatus } from "@/server/services/tasks";
 import { makeProject, makeUser, resetDb } from "./helpers";
 
@@ -20,23 +20,28 @@ describe("project creation and membership", () => {
     await expect(createProject(s, { title: "", description: "x" })).rejects.toMatchObject({ code: "VALIDATION" });
     await expect(createProject(await makeUser("SUPERVISOR"), { title: "T", description: "D" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
-  it("lets administrators create projects and assign only active supervisors", async () => {
+  it("lets administrators create categories while students own their project topics", async () => {
     const admin = await makeUser("ADMIN");
-    const supervisor = await makeUser("SUPERVISOR");
     const student = await makeUser("STUDENT");
-    const project = await createProject(admin, {
-      title: "Admin project", description: "Project description", academicPeriod: "2026/2027 Semester 1",
-      startDate: "", dueDate: "", supervisorId: supervisor.id,
+    const category = await createProjectCategory(admin, { name: "Information Systems", academicPeriod: "2026/2027 Semester 1" });
+    expect(category).toMatchObject({ name: "Information Systems", academicPeriod: "2026/2027 Semester 1" });
+    expect(await prisma.auditLog.count({ where: { action: "project_category.created", entityId: category.id } })).toBe(1);
+    await expect(createProjectCategory(admin, { name: category.name, academicPeriod: category.academicPeriod })).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(createProjectCategory(student, { name: "Information Systems", academicPeriod: "2027/2028 Semester 1" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(createProject(admin, { title: "Admin-assigned topic", description: "Admin-authored topic" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const project = await createProject(student, {
+      title: "Student's independent research topic",
+      description: "A topic chosen and described by the student.",
+      categoryId: category.id,
     });
-    expect(project).toMatchObject({ supervisorId: supervisor.id, title: "Admin project" });
-    expect(await prisma.projectMember.count({ where: { projectId: project.id } })).toBe(0);
-    expect((await listProjects(supervisor)).items.map((p) => p.id)).toContain(project.id);
-    expect((await listProjects(student)).items.map((p) => p.id)).not.toContain(project.id);
-    expect(await prisma.auditLog.count({ where: { action: "project.created", entityId: project.id } })).toBe(1);
-    expect(await prisma.notification.count({ where: { userId: supervisor.id, projectId: project.id } })).toBe(1);
-    await expect(createProject(admin, {
-      title: "Invalid assignment", description: "Project description", supervisorId: student.id,
-    })).rejects.toMatchObject({ code: "VALIDATION" });
+    expect(project).toMatchObject({
+      title: "Student's independent research topic",
+      categoryId: category.id,
+      academicPeriod: category.academicPeriod,
+      supervisorId: null,
+    });
+    expect(await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId: project.id, userId: student.id } } })).toMatchObject({ role: "LEADER" });
   });
   it("does not let students assign a supervisor even if they submit a supervisor id", async () => {
     const student = await makeUser("STUDENT");
@@ -81,6 +86,16 @@ describe("access control (no IDOR)", () => {
     await expect(updateProject(outsider, p.id, { title: "Hacked", description: "x" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect((await listProjects(outsider)).total).toBe(0);
     expect((await listProjects(owner)).total).toBe(1);
+  });
+  it("does not let administrators edit topics, assign students, or access student join codes", async () => {
+    const lead = await makeUser("STUDENT");
+    const admin = await makeUser("ADMIN");
+    const other = await makeUser("STUDENT");
+    const p = await makeProject(lead);
+    await expect(updateProject(admin, p.id, { title: "Admin-assigned topic", description: "Changed by admin" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(addMemberByEmail(admin, p.id, other.email)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await getProject(admin, p.id)).project.joinCode).toBeNull();
+    expect((await getProject(lead, p.id)).project.joinCode).toBe(p.joinCode);
   });
   it("gives supervisors access only to assigned projects", async () => {
     const lead = await makeUser("STUDENT"); const admin = await makeUser("ADMIN");

@@ -29,7 +29,7 @@ export function OverviewTab({ detail, supervisors, workload }: {
       <div className="grid2">
         <Card title="Project details">
           <p style={{ whiteSpace: "pre-wrap" }}>{p.description}</p>
-          <p className="muted">Period: {p.academicPeriod ?? "—"} · Start: {fmtDate(p.startDate)} · Expected completion: {fmtDate(p.dueDate)}<br />Created {fmtDate(p.createdAt)}{p.completedAt ? ` · Completed ${fmtDate(p.completedAt)}` : ""}</p>
+          <p className="muted">Category: {p.category?.name ?? "—"} · Period: {p.academicPeriod ?? "—"} · Start: {fmtDate(p.startDate)} · Expected completion: {fmtDate(p.dueDate)}<br />Created {fmtDate(p.createdAt)}{p.completedAt ? ` · Completed ${fmtDate(p.completedAt)}` : ""}</p>
           <p>Supervisor: {p.supervisor ? <strong>{p.supervisor.name}</strong> : <span className="muted">Not assigned yet</span>}</p>
           {next.length > 0 ? (
             <div className="row">
@@ -41,7 +41,7 @@ export function OverviewTab({ detail, supervisors, workload }: {
               ))}
             </div>
           ) : null}
-          {canManageLevel(level) ? (
+          {level === "LEADER" ? (
             <details className="inline"><summary>Edit project details</summary>
               <ActionForm action={updateProjectAction}>
                 <input type="hidden" name="projectId" value={p.id} />
@@ -213,7 +213,7 @@ export function SubmissionsTab({ detail, subs }: { detail: Detail; subs: Awaited
 
 export function MembersTab({ detail, userId }: Ctx) {
   const { project: p, level } = detail;
-  const manage = canManageLevel(level);
+  const manage = level === "LEADER";
   return (
     <div className="stack">
       <Card title="Members">

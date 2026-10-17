@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import type { ProjectStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { addMemberByEmail, assignSupervisor, createProject, deleteProject, joinByCode, removeMember, rotateJoinCode, setMemberRole, transitionProject, updateProject } from "@/server/services/projects";
+import { addMemberByEmail, assignSupervisor, createProject, createProjectCategory, deleteProject, joinByCode, removeMember, rotateJoinCode, setMemberRole, transitionProject, updateProject } from "@/server/services/projects";
 import { fields, guard, str, type ActionState } from "./_util";
 
 const PROJECT_FIELDS = ["title", "description", "academicPeriod", "startDate", "dueDate"];
@@ -11,8 +11,14 @@ const PROJECT_FIELDS = ["title", "description", "academicPeriod", "startDate", "
 export async function createProjectAction(_: ActionState, fd: FormData) {
   return guard(async () => {
     const actor = await requireUser();
-    const p = await createProject(actor, { ...fields(fd, PROJECT_FIELDS), supervisorId: str(fd, "supervisorId") });
+    const p = await createProject(actor, { ...fields(fd, PROJECT_FIELDS), categoryId: str(fd, "categoryId") });
     redirect(`/projects?created=${encodeURIComponent(p.id)}`);
+  });
+}
+export async function createProjectCategoryAction(_: ActionState, fd: FormData) {
+  return guard(async () => {
+    await createProjectCategory(await requireUser(), fields(fd, ["name", "academicPeriod"]));
+    return "Academic category created.";
   });
 }
 export async function updateProjectAction(_: ActionState, fd: FormData) {

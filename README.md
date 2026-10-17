@@ -9,9 +9,9 @@ This is an independent student project; it is **not** an official UPSA system an
 
 | Role | Can do |
 |---|---|
-| **Student** | Register; create a group project (becomes leader) or join with a code; manage members; create/assign/update tasks; track milestones; submit documents and revised versions; read supervisor feedback and reply; see supervision meeting notes, dashboard, deadlines, notifications and the project activity timeline. |
+| **Student** | Register; choose an academic category/semester and create a project with their own topic (becomes leader), or join a student-created project with a code; manage members; create/assign/update tasks; track milestones; submit documents and revised versions; read supervisor feedback and reply; see supervision meeting notes, dashboard, deadlines, notifications and the project activity timeline. |
 | **Supervisor** | See **only projects an administrator assigned to them**; monitor and create project tasks; manage milestones; record supervision meetings and action items; review submissions with structured feedback (comment, request revision, accept); move a project to *revision required* / *completed*; reports and CSV export; notifications. |
-| **Administrator** | Create projects and optionally assign supervisors; create supervisor/admin accounts; change roles; activate/deactivate accounts; assign or reassign supervisors; manage memberships; delete projects; read the audit log. Created by the seed script — never by public registration. |
+| **Administrator** | Create broad academic categories and semesters for students to choose from; assign or reassign supervisors; create supervisor/admin accounts; change roles; activate/deactivate accounts; delete projects; read the audit log. Administrators do not create or edit student research topics or assign students to topic projects. Created by the seed script — never by public registration. |
 
 Progress figures = completed ÷ recorded tasks (and milestones). They describe recorded activity, **not** quality, and the system never grades work: review decisions are made by the supervisor.
 
@@ -57,7 +57,7 @@ npm run dev
 ```
 Open http://localhost:3000 (health check: http://localhost:3000/api/health).
 
-Typical demo flow: students register → a student leader creates a project and shares the join code, or an admin creates one and assigns a supervisor → admin may assign or reassign a supervisor → leader moves the project to *In progress* → tasks/milestones → student submits a document → supervisor requests a revision → student uploads version 2 → supervisor accepts → supervisor/admin completes the project.
+Typical demo flow: admin creates broad categories/semesters and assigns supervisors → students register and create project topics under a category (or with a custom period) → a student leader shares the join code → leader moves the project to *In progress* → tasks/milestones → student submits a document → supervisor requests a revision → student uploads version 2 → supervisor accepts → supervisor completes the project.
 
 ## 8. Tests and build
 ```powershell

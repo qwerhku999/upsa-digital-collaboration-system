@@ -80,6 +80,7 @@ model User {
   updatedAt          DateTime @updatedAt
 
   sessions           Session[]
+  createdProjectCategories ProjectCategory[] @relation("ProjectCategoryCreator")
   memberships        ProjectMember[]
   supervisedProjects Project[]            @relation("ProjectSupervisor")
   createdTasks       Task[]               @relation("TaskCreator")
@@ -112,6 +113,7 @@ model Project {
   id             String        @id @default(cuid())
   title          String
   description    String        @db.Text
+  categoryId     String?
   academicPeriod String? // e.g. "2026/2027 Semester 1"
   status         ProjectStatus @default(PLANNING)
   startDate      DateTime?
@@ -123,6 +125,7 @@ model Project {
   updatedAt      DateTime      @updatedAt
 
   supervisor    User?                @relation("ProjectSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  category      ProjectCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   members       ProjectMember[]
   milestones    Milestone[]
   tasks         Task[]
@@ -132,7 +135,22 @@ model Project {
   meetings      SupervisionMeeting[]
 
   @@index([supervisorId])
+  @@index([categoryId])
   @@index([status])
+}
+
+model ProjectCategory {
+  id             String   @id @default(cuid())
+  name           String
+  academicPeriod String
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  createdBy User      @relation("ProjectCategoryCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  projects  Project[]
+
+  @@unique([name, academicPeriod])
+  @@index([academicPeriod])
 }
 
 model ProjectMember {

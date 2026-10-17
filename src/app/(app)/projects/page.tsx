@@ -1,12 +1,11 @@
 import Link from "next/link";
 import type { ProjectStatus } from "@prisma/client";
-import { createProjectAction, joinProjectAction } from "@/app/actions/projects";
+import { createProjectAction, createProjectCategoryAction, joinProjectAction } from "@/app/actions/projects";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, Empty, PageHead, Pagination, Progress } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { fmtDate, label, one } from "@/lib/format";
-import { prisma } from "@/lib/prisma";
-import { listProjects } from "@/server/services/projects";
+import { listProjectCategories, listProjects } from "@/server/services/projects";
 
 export const metadata = { title: "Projects | Project Hub" };
 const STATUSES: ProjectStatus[] = ["PLANNING", "IN_PROGRESS", "UNDER_REVIEW", "REVISION_REQUIRED", "COMPLETED"];
@@ -19,14 +18,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const { items, pages, total } = await listProjects(user, { q, status, page });
   const createdProject = items.find((p) => p.id === one(sp.created));
-  const supervisors = user.role === "ADMIN"
-    ? await prisma.user.findMany({ where: { role: "SUPERVISOR", active: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } })
-    : [];
+  const categories = await listProjectCategories();
 
   return (
     <>
       <PageHead eyebrow="WORKSPACE" title={user.role === "SUPERVISOR" ? "Supervised projects" : "Projects"}>
-        {user.role !== "SUPERVISOR" ? <Link className="button" href="#create-project">Create Project</Link> : null}
+        {user.role === "STUDENT" ? <Link className="button" href="#create-project">Create Project</Link> : null}
       </PageHead>
       <Card>
         <form className="filter-form" method="get">
@@ -41,18 +38,21 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             ? <Link className="button ghost" href="/projects">Clear filters</Link>
             : user.role === "SUPERVISOR"
               ? <span className="muted small">Ask an administrator to assign a project to you.</span>
-              : <Link className="button ghost" href="#create-project">{user.role === "STUDENT" ? "Create or join a project" : "Create a project"}</Link>}>
-            {q || status ? "No projects match these filters." : user.role === "STUDENT" ? "You are not in any project yet. Create one or join with a code below." : user.role === "SUPERVISOR" ? "No projects have been assigned to you yet." : "No projects exist yet. Create a project below to get started."}
+              : user.role === "STUDENT"
+                ? <Link className="button ghost" href="#create-project">Create or join a project</Link>
+                : <Link className="button ghost" href="#create-category">Set up academic categories</Link>}>
+            {q || status ? "No projects match these filters." : user.role === "STUDENT" ? "You are not in any project yet. Create one or join with a code below." : user.role === "SUPERVISOR" ? "No projects have been assigned to you yet." : "No student projects exist yet. Set up academic categories for students to choose from."}
           </Empty>
         ) : (
           <div className="table-wrap">
             <table>
               <caption className="sr-only">Projects</caption>
-              <thead><tr><th>Project</th><th>Status</th><th>Supervisor</th><th>Members</th><th>Task progress</th><th>Milestone progress</th><th>Due</th></tr></thead>
+              <thead><tr><th>Student project topic</th><th>Category</th><th>Status</th><th>Supervisor</th><th>Members</th><th>Task progress</th><th>Milestone progress</th><th>Due</th></tr></thead>
               <tbody>
                 {items.map((p) => (
                   <tr key={p.id}>
                     <td><Link href={`/projects/${p.id}`}><strong>{p.title}</strong></Link>{p.stats.tasksOverdue > 0 ? <div className="small overdue-text">{p.stats.tasksOverdue} overdue task(s)</div> : null}</td>
+                    <td>{p.category?.name ?? <span className="muted">—</span>}</td>
                     <td><Badge value={p.status} /></td>
                     <td>{p.supervisor?.name ?? <span className="muted">Not assigned</span>}</td>
                     <td>{p._count.members}</td>
@@ -75,7 +75,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             <ActionForm action={createProjectAction}>
               <div className="field"><label htmlFor="title">Title</label><input id="title" name="title" required maxLength={150} /></div>
               <div className="field"><label htmlFor="description">Description</label><textarea id="description" name="description" required maxLength={4000} /></div>
-              <div className="field"><label htmlFor="academicPeriod">Academic year / semester (optional)</label><input id="academicPeriod" name="academicPeriod" maxLength={60} placeholder="e.g. 2026/2027 Semester 1" /></div>
+              <div className="field"><label htmlFor="categoryId">Academic category / semester (optional)</label><select id="categoryId" name="categoryId" defaultValue=""><option value="">Choose later or use a custom period</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.academicPeriod}</option>)}</select><small>Choose a category, then define your own project topic and description.</small></div>
+              <div className="field"><label htmlFor="academicPeriod">Academic period (if not using a category)</label><input id="academicPeriod" name="academicPeriod" maxLength={60} placeholder="e.g. 2026/2027 Semester 1" /></div>
               <div className="row"><div className="field"><label htmlFor="startDate">Start date</label><input id="startDate" name="startDate" type="date" /></div><div className="field"><label htmlFor="dueDate">Expected completion</label><input id="dueDate" name="dueDate" type="date" /></div></div>
               <SubmitButton>Create project</SubmitButton>
               <p className="muted small">You become the project leader. An administrator assigns the supervisor.</p>
@@ -90,21 +91,19 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         </div>
       ) : null}
       {user.role === "ADMIN" ? (
-        <div id="create-project">
-          <Card title="Create a project">
-            <ActionForm action={createProjectAction} className="stack">
-              <div className="field"><label htmlFor="title">Title</label><input id="title" name="title" required maxLength={150} /></div>
-              <div className="field"><label htmlFor="description">Description</label><textarea id="description" name="description" required maxLength={4000} /></div>
-              <div className="field"><label htmlFor="academicPeriod">Academic year / semester (optional)</label><input id="academicPeriod" name="academicPeriod" maxLength={60} placeholder="e.g. 2026/2027 Semester 1" /></div>
+        <div id="create-category" className="stack">
+          <Card title="Academic categories and semesters">
+            <p>Set up broad categories and academic periods. Students choose from these options and create their own project topics; do not enter individual research topics here.</p>
+            <ActionForm action={createProjectCategoryAction} resetOnSuccess>
               <div className="row">
-                <div className="field"><label htmlFor="startDate">Start date</label><input id="startDate" name="startDate" type="date" /></div>
-                <div className="field"><label htmlFor="dueDate">Expected completion</label><input id="dueDate" name="dueDate" type="date" /></div>
+                <div className="field"><label htmlFor="categoryName">Category</label><input id="categoryName" name="name" required maxLength={100} placeholder="e.g. Information Systems" /></div>
+                <div className="field"><label htmlFor="categoryPeriod">Academic year / semester</label><input id="categoryPeriod" name="academicPeriod" required maxLength={60} placeholder="e.g. 2026/2027 Semester 1" /></div>
               </div>
-              <div className="field"><label htmlFor="supervisorId">Assign supervisor (optional)</label>
-                <select id="supervisorId" name="supervisorId" defaultValue=""><option value="">Assign later</option>{supervisors.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.email})</option>)}</select>
-              </div>
-              <SubmitButton pendingText="Creating project…">Create Project</SubmitButton>
+              <SubmitButton>Create category</SubmitButton>
             </ActionForm>
+            {categories.length > 0 ? (
+              <ul>{categories.map((category) => <li key={category.id}>{category.name} — {category.academicPeriod}</li>)}</ul>
+            ) : <p className="muted small">No academic categories have been created yet.</p>}
           </Card>
         </div>
       ) : null}

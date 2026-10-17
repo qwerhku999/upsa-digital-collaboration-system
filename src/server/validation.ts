@@ -54,7 +54,11 @@ export const projectSchema = z
   })
   .refine((p) => !p.startDate || !p.dueDate || p.dueDate >= p.startDate, { message: "Due date cannot be before the start date.", path: ["dueDate"] });
 
-export const projectCreationSchema = projectSchema.extend({ supervisorId: optText(40) });
+export const projectCreationSchema = projectSchema.extend({ categoryId: optText(40) });
+export const projectCategorySchema = z.object({
+  name: text("Category", 100),
+  academicPeriod: text("Academic period", 60),
+});
 
 export const taskSchema = z.object({
   title: text("Title", 150),
