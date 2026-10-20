@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSessionRecord, findSessionUser } from "@/lib/session-store";
 import { createUser, listUsers, resetUserPassword, setUserActive, setUserRole } from "@/server/services/admin";
 import { authenticate } from "@/server/services/auth";
+import { bootstrapFirstAdmin } from "@/server/services/bootstrap-admin";
 import { getDashboard } from "@/server/services/dashboard";
 import { createMilestone, setMilestoneStatus } from "@/server/services/milestones";
 import { listNotifications, markAllRead, markRead, syncDeadlineNotifications, unreadCount } from "@/server/services/notifications";
@@ -50,6 +51,16 @@ describe("notifications", () => {
 });
 
 describe("administration is enforced on the server", () => {
+  it("bootstraps exactly one administrator only with explicit confirmation", async () => {
+    const input = { name: "First Administrator", email: "first-admin@test.example", password: "Temp-password-1", role: "ADMIN" };
+    await expect(bootstrapFirstAdmin(input, undefined)).rejects.toMatchObject({ code: "VALIDATION" });
+    const created = await bootstrapFirstAdmin(input, "CREATE_FIRST_ADMIN");
+    expect(created.email).toBe(input.email);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({ role: "ADMIN", mustChangePassword: true });
+    await expect(bootstrapFirstAdmin({ ...input, email: "second-admin@test.example" }, "CREATE_FIRST_ADMIN")).rejects.toMatchObject({ code: "VALIDATION" });
+    expect(await prisma.auditLog.count({ where: { action: "user.bootstrap_admin", entityId: created.id } })).toBe(1);
+  });
+
   it("blocks students and supervisors from every admin function", async () => {
     const student = await makeUser("STUDENT"); const sup = await makeUser("SUPERVISOR"); const target = await makeUser("STUDENT");
     for (const who of [student, sup]) {
@@ -65,6 +76,7 @@ describe("administration is enforced on the server", () => {
   });
   it("provisions accounts that must change their password, and audits it", async () => {
     const admin = await makeUser("ADMIN");
+    await expect(createUser(admin, { name: "Student", email: "student@test.example", role: "STUDENT", password: "Temp-password-1" })).rejects.toMatchObject({ code: "VALIDATION" });
     const u = await createUser(admin, { name: "New Supervisor", email: "Sup@Test.Example", role: "SUPERVISOR", password: "Temp-password-1" });
     const login = await authenticate({ email: "sup@test.example", password: "Temp-password-1" });
     expect(login).toMatchObject({ id: u.id, role: "SUPERVISOR", mustChangePassword: true });
@@ -107,6 +119,7 @@ describe("dashboard and reports use real data", () => {
     expect(await getDashboard(outsider)).toMatchObject({ projectsTotal: 0, tasks: { completed: 0, overdue: 0 } });
     const adminView = await getDashboard(admin);
     expect(adminView.admin?.usersByRole.find((r) => r.role === "STUDENT")?._count._all).toBe(2);
+    expect(adminView.pendingReviews).toBe(0);
     expect((await getDashboard(sup)).projectsTotal).toBe(1);
   });
   it("limits reports to supervisors/admins and neutralises CSV formulas", async () => {
@@ -118,5 +131,6 @@ describe("dashboard and reports use real data", () => {
     const csv = await projectReportCsv(sup);
     expect(csv).toContain(`"'=HYPERLINK(""http://evil"")"`);
     expect(csv.split("\r\n")[0]).toContain("Project");
+    expect(await projectReportCsv(admin)).not.toContain("Submissions awaiting review");
   });
 });

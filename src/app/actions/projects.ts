@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import type { ProjectStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
+import { invalid } from "@/lib/errors";
 import { addMemberByEmail, assignSupervisor, createProject, createProjectCategory, deleteProject, joinByCode, removeMember, rotateJoinCode, setMemberRole, transitionProject, updateProject } from "@/server/services/projects";
 import { fields, guard, str, type ActionState } from "./_util";
 
@@ -48,7 +49,7 @@ export async function addMemberAction(_: ActionState, fd: FormData) {
 export async function joinProjectAction(_: ActionState, fd: FormData) {
   return guard(async () => {
     const id = await joinByCode(await requireUser(), str(fd, "code"));
-    redirect(`/projects/${id}`);
+    redirect(`/projects/${id}?joined=1`);
   });
 }
 export async function removeMemberAction(_: ActionState, fd: FormData) {
@@ -62,7 +63,9 @@ export async function removeMemberAction(_: ActionState, fd: FormData) {
 }
 export async function setMemberRoleAction(_: ActionState, fd: FormData) {
   return guard(async () => {
-    await setMemberRole(await requireUser(), str(fd, "projectId"), str(fd, "userId"), str(fd, "role") === "LEADER" ? "LEADER" : "MEMBER");
+    const role = str(fd, "role");
+    if (role !== "LEADER" && role !== "MEMBER") throw invalid("Choose a valid project member role.");
+    await setMemberRole(await requireUser(), str(fd, "projectId"), str(fd, "userId"), role);
     return "Role updated.";
   });
 }
@@ -74,7 +77,7 @@ export async function rotateCodeAction(_: ActionState, fd: FormData) {
 }
 export async function deleteProjectAction(_: ActionState, fd: FormData) {
   return guard(async () => {
-    await deleteProject(await requireUser(), str(fd, "projectId"));
-    redirect("/projects");
+    const cleanupPending = await deleteProject(await requireUser(), str(fd, "projectId"));
+    redirect(cleanupPending ? "/projects?file-cleanup=pending" : "/projects");
   });
 }

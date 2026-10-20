@@ -23,7 +23,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHead eyebrow="WORKSPACE" title={user.role === "SUPERVISOR" ? "Supervised projects" : "Projects"}>
-        {user.role === "STUDENT" ? <Link className="button" href="#create-project">Create Project</Link> : null}
+        {user.role === "STUDENT" ? (
+          <div className="row">
+            <Link className="button ghost" href="#join-project">Join a Project</Link>
+            <Link className="button" href="#create-project">Create Project</Link>
+          </div>
+        ) : null}
       </PageHead>
       <Card>
         <form className="filter-form" method="get">
@@ -32,6 +37,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             <select id="status" name="status" defaultValue={status ?? ""}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</select></div>
           <button className="button">Filter</button>
         </form>
+        {one(sp["file-cleanup"]) === "pending" ? <p role="status" className="success">The project was deleted. Some stored files could not be removed yet; cleanup will retry when the scheduled cleanup command runs.</p> : null}
         {createdProject ? <p role="status" className="success">Project created. <Link href={`/projects/${createdProject.id}`}>Open {createdProject.title}</Link></p> : null}
         {items.length === 0 ? (
           <Empty action={q || status
@@ -82,9 +88,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
               <p className="muted small">You become the project leader. An administrator assigns the supervisor.</p>
             </ActionForm>
           </Card>
-          <Card title="Join with a project code">
+          <Card title="Join a Project">
+            <div id="join-project" />
+            <p className="muted">Enter the 10-character join code shared by a project leader.</p>
             <ActionForm action={joinProjectAction}>
-              <div className="field"><label htmlFor="code">Join code</label><input id="code" name="code" required maxLength={20} className="mono" autoComplete="off" /><small>Ask a project leader for the code shown on their project&apos;s Members tab.</small></div>
+              <div className="field"><label htmlFor="code">Project join code</label><input id="code" name="code" required maxLength={10} className="mono" autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="e.g. A1B2C3D4E5" /><small>Ask a project leader for the code shown on their project&apos;s Members tab.</small></div>
               <SubmitButton>Join project</SubmitButton>
             </ActionForm>
           </Card>

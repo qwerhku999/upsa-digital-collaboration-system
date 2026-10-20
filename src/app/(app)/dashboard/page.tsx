@@ -21,7 +21,12 @@ export default async function Dashboard() {
       <PageHead eyebrow={roleLabel} title={`Welcome, ${user.name.split(" ")[0]}`}>
         {user.role === "ADMIN" ? <Link className="button" href="/projects">Manage projects</Link>
           : user.role === "SUPERVISOR" ? <Link className="button" href="/submissions">Review submissions</Link>
-            : <Link className="button" href="/tasks">View my tasks</Link>}
+            : (
+              <div className="row">
+                <Link className="button ghost" href="/projects#join-project">Join a Project</Link>
+                <Link className="button" href="/tasks">View my tasks</Link>
+              </div>
+            )}
       </PageHead>
       <p className="muted dashboard-intro">
         {student ? "Your projects, assigned work, deadlines and supervisor feedback in one place."
@@ -35,7 +40,7 @@ export default async function Dashboard() {
         <Stat label="Overdue tasks" value={d.tasks.overdue} hint="Not completed and past the due date" />
       </div>
       <div className="stats">
-        <Stat label={student ? "Submissions awaiting review" : "Pending document reviews"} value={d.pendingReviews} />
+        {user.role === "ADMIN" ? null : <Stat label={student ? "Submissions awaiting review" : "Pending document reviews"} value={d.pendingReviews} />}
         <Stat label="Milestones completed" value={d.milestones.completed} hint={`${d.milestones.inProgress} in progress · ${d.milestones.notStarted} not started`} />
         <Stat label="Unread notifications" value={d.unread} />
         {d.admin ? <Stat label="Projects without a supervisor" value={d.admin.unassigned} /> : <Stat label="Recent feedback items" value={d.recentFeedback.length} />}
@@ -50,8 +55,10 @@ export default async function Dashboard() {
             </div>
           ))}
         </Card>
-        <Card title="Recent feedback" action={<Link href="/feedback">View all</Link>}>
-          {d.recentFeedback.length === 0 ? <Empty action={<Link className="button ghost" href={student ? "/projects" : "/submissions"}>{student ? "View projects" : "View submissions"}</Link>}>No feedback yet. Feedback will appear here after a submission receives a comment or review.</Empty> : d.recentFeedback.map((f) => (
+        <Card title={user.role === "ADMIN" ? "Administration" : "Recent feedback"} action={user.role === "ADMIN" ? <Link href="/admin/users">Manage users</Link> : <Link href="/feedback">View all</Link>}>
+          {user.role === "ADMIN" ? (
+            <Empty action={<Link className="button ghost" href="/projects">Manage projects</Link>}>Submission documents and review feedback are restricted to project members and assigned supervisors.</Empty>
+          ) : d.recentFeedback.length === 0 ? <Empty action={<Link className="button ghost" href={student ? "/projects" : "/submissions"}>{student ? "View projects" : "View submissions"}</Link>}>No feedback yet. Feedback will appear here after a submission receives a comment or review.</Empty> : d.recentFeedback.map((f) => (
             <div className="list-item" key={f.id}>
               <Link href={`/submissions/${f.submission.id}`}><strong>{f.submission.title}</strong></Link> <Badge value={f.decision} />
               <div className="muted">{f.author.name} · {fmtDateTime(f.createdAt)}</div>

@@ -47,6 +47,7 @@ async function activeAdminCountExcluding(userId: string) {
 
 export async function setUserRole(actor: Actor, userId: string, role: UserRole) {
   requireAdmin(actor);
+  if (!["STUDENT", "SUPERVISOR", "ADMIN"].includes(role)) throw invalid("Unknown account role.");
   if (userId === actor.id) throw invalid("You cannot change your own role.");
   const target = await prisma.user.findUnique({ where: { id: userId } });
   if (!target) throw notFound("User not found.");
@@ -63,6 +64,7 @@ export async function setUserRole(actor: Actor, userId: string, role: UserRole) 
 
 export async function setUserActive(actor: Actor, userId: string, active: boolean) {
   requireAdmin(actor);
+  if (typeof active !== "boolean") throw invalid("Unknown account status.");
   if (userId === actor.id) throw invalid("You cannot deactivate your own account.");
   const target = await prisma.user.findUnique({ where: { id: userId } });
   if (!target) throw notFound("User not found.");

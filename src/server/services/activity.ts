@@ -9,7 +9,10 @@ export async function logActivity(db: Db, projectId: string, actorId: string | n
 export async function listActivity(actor: Actor, projectId: string, take = 40) {
   await getProjectAccess(actor, projectId);
   return prisma.projectActivity.findMany({
-    where: { projectId },
+    where: {
+      projectId,
+      ...(actor.role === "ADMIN" ? { type: { notIn: ["submission.created", "submission.version", "feedback.added"] } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take,
     include: { actor: { select: { name: true } } },

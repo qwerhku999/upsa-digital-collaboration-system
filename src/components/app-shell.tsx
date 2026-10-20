@@ -18,8 +18,8 @@ const NAV: Record<UserRole, { href: string; text: string }[]> = {
   ],
   ADMIN: [
     { href: "/dashboard", text: "Overview" }, { href: "/projects", text: "Projects" }, { href: "/tasks", text: "Tasks" },
-    { href: "/submissions", text: "Submissions" }, { href: "/feedback", text: "Feedback" }, { href: "/notifications", text: "Notifications" },
-    { href: "/reports", text: "Reports" }, { href: "/admin/users", text: "Users" }, { href: "/admin/audit", text: "Audit log" },
+    { href: "/notifications", text: "Notifications" }, { href: "/reports", text: "Reports" },
+    { href: "/admin/users", text: "Users" }, { href: "/admin/audit", text: "Audit log" },
   ],
 };
 

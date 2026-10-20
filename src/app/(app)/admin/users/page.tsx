@@ -8,6 +8,7 @@ import { listUsers } from "@/server/services/admin";
 
 export const metadata = { title: "Users | Project Hub" };
 const ROLES: UserRole[] = ["STUDENT", "SUPERVISOR", "ADMIN"];
+const CREATABLE_ROLES: UserRole[] = ["SUPERVISOR", "ADMIN"];
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireRole("ADMIN");
@@ -51,7 +52,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                         {u.active ? <ConfirmButton message={`Deactivate ${u.name}? They will be signed out and unable to sign in.`}>Deactivate</ConfirmButton> : <SubmitButton variant="ghost">Reactivate</SubmitButton>}</ActionForm>
                       <details className="inline"><summary>Set temporary password</summary>
                         <ActionForm action={resetPasswordAction}><input type="hidden" name="userId" value={u.id} />
-                          <div className="field"><label htmlFor={`pw-${u.id}`}>Temporary password</label><input id={`pw-${u.id}`} name="password" type="text" autoComplete="off" required minLength={10} maxLength={72} /></div>
+                          <div className="field"><label htmlFor={`pw-${u.id}`}>Temporary password</label><input id={`pw-${u.id}`} name="password" type="password" autoComplete="new-password" required minLength={10} maxLength={72} /></div>
                           <SubmitButton>Set password</SubmitButton></ActionForm></details>
                     </>
                   )}
@@ -67,8 +68,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           <div className="row">
             <div className="field"><label htmlFor="n-name">Full name</label><input id="n-name" name="name" required maxLength={100} /></div>
             <div className="field"><label htmlFor="n-email">Email</label><input id="n-email" name="email" type="email" required /></div>
-            <div className="field"><label htmlFor="n-role">Role</label><select id="n-role" name="role" defaultValue="SUPERVISOR">{ROLES.map((r) => <option key={r} value={r}>{label(r)}</option>)}</select></div>
-            <div className="field"><label htmlFor="n-pw">Temporary password</label><input id="n-pw" name="password" type="text" autoComplete="off" required minLength={10} maxLength={72} /></div>
+            <div className="field"><label htmlFor="n-role">Role</label><select id="n-role" name="role" defaultValue="SUPERVISOR">{CREATABLE_ROLES.map((r) => <option key={r} value={r}>{label(r)}</option>)}</select></div>
+            <div className="field"><label htmlFor="n-pw">Temporary password</label><input id="n-pw" name="password" type="password" autoComplete="new-password" required minLength={10} maxLength={72} /></div>
           </div>
           <SubmitButton>Create account</SubmitButton>
           <p className="muted small">Share the temporary password through a secure channel. The user must change it at first sign-in.</p>

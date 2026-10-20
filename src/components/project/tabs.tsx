@@ -4,7 +4,7 @@ import { addMemberAction, assignSupervisorAction, deleteProjectAction, removeMem
 import { createMilestoneAction, createSubmissionAction, createTaskAction, deleteMilestoneAction, milestoneStatusAction, updateMilestoneAction } from "@/app/actions/work";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { Badge, Card, Empty, Progress } from "@/components/ui";
-import { ALLOWED_EXTENSIONS } from "@/lib/files";
+import { ALLOWED_EXTENSIONS, maxUploadMb } from "@/lib/files";
 import { fmtDate, fmtDateTime, label, toInputDate } from "@/lib/format";
 import type { AccessLevel } from "@/server/services/access";
 import { canManage as canManageLevel } from "@/server/services/access";
@@ -13,6 +13,7 @@ import type { listActivity } from "@/server/services/activity";
 import type { listSubmissions } from "@/server/services/submissions";
 import type { getProjectWorkload, listTasks } from "@/server/services/tasks";
 import { TaskFields, TaskTable } from "./task-parts";
+import { CopyJoinCode } from "@/components/copy-join-code";
 
 type Detail = Awaited<ReturnType<typeof getProject>>;
 type Ctx = { detail: Detail; userId: string };
@@ -60,7 +61,7 @@ export function OverviewTab({ detail, supervisors, workload }: {
           <ul>
             <li>{s.tasksTotal} task(s): {s.tasksDone} completed, {s.tasksInProgress} in progress, <strong>{s.tasksOverdue} overdue</strong></li>
             <li>{s.milestonesDone} of {s.milestonesTotal} milestone(s) completed</li>
-            <li>{s.pendingReviews} submission(s) awaiting supervisor review</li>
+            {level !== "ADMIN" ? <li>{s.pendingReviews} submission(s) awaiting supervisor review</li> : null}
           </ul>
           <p className="muted small">Task completion and milestone completion are tracked independently. Both describe recorded workflow activity, not academic quality or grades.</p>
         </Card>
@@ -201,7 +202,7 @@ export function SubmissionsTab({ detail, subs }: { detail: Detail; subs: Awaited
             <input type="hidden" name="projectId" value={p.id} />
             <div className="field"><label htmlFor="s-t">Title</label><input id="s-t" name="title" required maxLength={150} placeholder="e.g. Literature review draft" /></div>
             <div className="field"><label htmlFor="s-d">Description</label><textarea id="s-d" name="description" required maxLength={3000} /></div>
-            <div className="field"><label htmlFor="s-f">File</label><input id="s-f" name="file" type="file" required accept={ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(",")} /><small>Allowed: {ALLOWED_EXTENSIONS.join(", ")}. Maximum 10 MB by default.</small></div>
+            <div className="field"><label htmlFor="s-f">File</label><input id="s-f" name="file" type="file" required accept={ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(",")} /><small>Allowed: {ALLOWED_EXTENSIONS.join(", ")}. Maximum {maxUploadMb()} MB.</small></div>
             <div className="field"><label htmlFor="s-n">Note to supervisor (optional)</label><textarea id="s-n" name="note" maxLength={1000} /></div>
             <SubmitButton pendingText="Uploading…">Submit document</SubmitButton>
           </ActionForm>
@@ -252,7 +253,8 @@ export function MembersTab({ detail, userId }: Ctx) {
             </ActionForm>
           </Card>
           <Card title="Join code">
-            <p>Share this code so students can join: <strong className="mono">{p.joinCode}</strong></p>
+            <p>Share this code so students can join your project:</p>
+            {p.joinCode ? <CopyJoinCode code={p.joinCode} /> : <p className="muted small">The join code is available to the project leader only.</p>}
             <ActionForm action={rotateCodeAction}><input type="hidden" name="projectId" value={p.id} /><SubmitButton variant="ghost">Generate a new code</SubmitButton></ActionForm>
           </Card>
         </div>

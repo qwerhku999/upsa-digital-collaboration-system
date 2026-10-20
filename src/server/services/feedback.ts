@@ -11,6 +11,7 @@ import { notify } from "./notifications";
  * Decisions apply to the latest version only, so older versions keep their history untouched.
  */
 export async function addFeedback(actor: Actor, submissionId: string, input: unknown) {
+  if (actor.role === "ADMIN") throw forbidden("Administrators cannot access private submission feedback.");
   const d = parse(feedbackSchema, input);
   const sub = await prisma.submission.findUnique({
     where: { id: submissionId },
@@ -58,6 +59,7 @@ export async function addFeedback(actor: Actor, submissionId: string, input: unk
 }
 
 export async function listRecentFeedback(actor: Actor, take = 20) {
+  if (actor.role === "ADMIN") throw forbidden("Administrators cannot access private submission feedback.");
   return prisma.feedback.findMany({
     where: { submission: { project: accessibleProjectsWhere(actor) } },
     orderBy: { createdAt: "desc" },

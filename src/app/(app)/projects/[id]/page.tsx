@@ -24,7 +24,9 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const user = await requireUser();
   const { id } = await params;
   const sp = await searchParams;
-  const tab = TABS.find(([k]) => k === one(sp.tab))?.[0] ?? "overview";
+  const visibleTabs = user.role === "ADMIN" ? TABS.filter(([key]) => key !== "submissions") : TABS;
+  const tab = visibleTabs.find(([k]) => k === one(sp.tab))?.[0] ?? "overview";
+  const joined = one(sp.joined) === "1";
 
   let detail;
   try {
@@ -69,9 +71,10 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       <PageHead eyebrow={project.academicPeriod ?? "PROJECT"} title={project.title}>
         <Badge value={project.status} />
       </PageHead>
+      {joined ? <p className="success" role="status">You joined this project successfully. You can see the group members in the Members tab.</p> : null}
       <p><Link href="/projects">← All projects</Link></p>
       <nav className="tabs" aria-label="Project sections">
-        {TABS.map(([k, text]) => <Link key={k} href={`/projects/${id}?tab=${k}`} className={tab === k ? "on" : undefined} aria-current={tab === k ? "page" : undefined}>{text}</Link>)}
+        {visibleTabs.map(([k, text]) => <Link key={k} href={`/projects/${id}?tab=${k}`} className={tab === k ? "on" : undefined} aria-current={tab === k ? "page" : undefined}>{text}</Link>)}
       </nav>
       {body}
     </>

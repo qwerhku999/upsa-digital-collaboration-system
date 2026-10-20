@@ -3,16 +3,25 @@ import type { Prisma, ProjectStatus } from "@prisma/client";
 import { AppError, conflict, forbidden, invalid, isUniqueViolation, notFound } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { hit } from "@/lib/rate-limit";
-import { deleteStoredFile } from "@/lib/storage";
+import { retryPendingFileDeletions } from "./file-deletions";
 import { parse, projectCategorySchema, projectCreationSchema, projectSchema } from "@/server/validation";
 import { accessibleProjectsWhere, canManage, getProjectAccess, requireAdmin, type AccessLevel, type Actor } from "./access";
 import { logActivity } from "./activity";
+import type { Db } from "./db";
 import { PAGE_SIZE, audit, paginate } from "./audit";
 import { notify, projectRecipients } from "./notifications";
 import { projectStats } from "./stats";
 
 export const MAX_MEMBERS = 10;
 const newJoinCode = () => randomBytes(5).toString("hex").toUpperCase();
+
+async function lockProject(tx: Db, projectId: string) {
+  const [project] = await tx.$queryRaw<{ id: string; title: string; status: ProjectStatus }[]>`
+    SELECT "id", "title", "status" FROM "Project" WHERE "id" = ${projectId} FOR UPDATE
+  `;
+  if (!project) throw notFound("Project not found.");
+  return project;
+}
 
 export async function createProjectCategory(actor: Actor, input: unknown) {
   requireAdmin(actor);
@@ -145,27 +154,40 @@ export async function addMemberByEmail(actor: Actor, projectId: string, email: s
   if (!target || target.role !== "STUDENT" || !target.active) throw invalid("No active student account was found with that email.");
   if (project.members.length >= MAX_MEMBERS) throw invalid(`A project can have at most ${MAX_MEMBERS} members.`);
   if (project.members.some((m) => m.userId === target.id)) throw conflict("That student is already a member.");
-  await insertMember(actor, project.id, project.title, target);
+  await insertMember(actor, project.id, target, false);
 }
 
 export async function joinByCode(actor: Actor, code: string) {
   if (actor.role !== "STUDENT") throw forbidden("Only students can join projects with a code.");
   if ((await hit(`join:${actor.id}`, 900)) > 10) throw new AppError("RATE_LIMITED", "Too many attempts. Please wait a few minutes.");
-  const project = await prisma.project.findUnique({ where: { joinCode: code.trim().toUpperCase() }, include: { members: { select: { userId: true } } } });
-  if (!project || project.status === "COMPLETED") throw invalid("That join code is not valid.");
+  const normalizedCode = code.trim().toUpperCase();
+  if (!/^[A-F0-9]{10}$/.test(normalizedCode)) throw invalid("Enter the 10-character project join code.");
+  const project = await prisma.project.findUnique({ where: { joinCode: normalizedCode }, include: { members: { select: { userId: true } } } });
+  if (!project || project.status === "COMPLETED") throw invalid("That join code is invalid or the project is no longer accepting members.");
   if (project.members.some((m) => m.userId === actor.id)) throw conflict("You are already a member of that project.");
   if (project.members.length >= MAX_MEMBERS) throw invalid("That project is full.");
-  await insertMember(actor, project.id, project.title, { id: actor.id, name: actor.name }, true);
+  await insertMember(actor, project.id, { id: actor.id, name: actor.name }, true);
   return project.id;
 }
 
-async function insertMember(actor: Actor, projectId: string, title: string, target: { id: string; name: string }, joined = false) {
+async function insertMember(actor: Actor, projectId: string, target: { id: string; name: string }, joined: boolean) {
   try {
     await prisma.$transaction(async (tx) => {
+      const project = await lockProject(tx, projectId);
+      if (project.status === "COMPLETED") throw invalid("Completed projects cannot accept new members.");
+      if (!joined) {
+        const leader = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId: actor.id } }, select: { role: true } });
+        if (leader?.role !== "LEADER") throw forbidden("Only the project leader can invite members.");
+      }
+      const targetUser = await tx.user.findUnique({ where: { id: target.id }, select: { role: true, active: true } });
+      if (!targetUser || targetUser.role !== "STUDENT" || !targetUser.active) throw invalid("No active student account was found.");
+      if (await tx.projectMember.count({ where: { projectId } }) >= MAX_MEMBERS) {
+        throw invalid(joined ? "That project is full." : `A project can have at most ${MAX_MEMBERS} members.`);
+      }
       await tx.projectMember.create({ data: { projectId, userId: target.id } });
       await logActivity(tx, projectId, actor.id, "member.added", joined ? `${target.name} joined using the project code.` : `${actor.name} added ${target.name} to the project.`);
-      await notify(tx, [target.id], { type: "MEMBERSHIP", projectId, link: `/projects/${projectId}`, title: "Added to a project", message: `You are now a member of "${title}".` });
-      await notify(tx, (await projectRecipients(tx, projectId, actor.id)).filter((id) => id !== target.id), { type: "MEMBERSHIP", projectId, link: `/projects/${projectId}`, title: "New project member", message: `${target.name} joined "${title}".` });
+      await notify(tx, [target.id], { type: "MEMBERSHIP", projectId, link: `/projects/${projectId}`, title: "Added to a project", message: `You are now a member of "${project.title}".` });
+      await notify(tx, (await projectRecipients(tx, projectId, actor.id)).filter((id) => id !== target.id), { type: "MEMBERSHIP", projectId, link: `/projects/${projectId}`, title: "New project member", message: `${target.name} joined "${project.title}".` });
     });
   } catch (e) {
     if (isUniqueViolation(e)) throw conflict("That student is already a member.");
@@ -173,17 +195,17 @@ async function insertMember(actor: Actor, projectId: string, title: string, targ
   }
 }
 
-async function leaderCount(projectId: string) {
-  return prisma.projectMember.count({ where: { projectId, role: "LEADER" } });
-}
-
 export async function removeMember(actor: Actor, projectId: string, userId: string) {
-  const { project, level } = await getProjectAccess(actor, projectId);
-  if (level !== "LEADER" && userId !== actor.id) throw forbidden("You can only remove yourself.");
-  const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: { select: { name: true } } } });
-  if (!member) throw notFound("That person is not a member of this project.");
-  if (member.role === "LEADER" && (await leaderCount(projectId)) <= 1) throw invalid("A project needs at least one leader. Make another member the leader first.");
   await prisma.$transaction(async (tx) => {
+    const project = await lockProject(tx, projectId);
+    const actorMember = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId: actor.id } }, select: { role: true } });
+    if (!actorMember) throw notFound("Project not found.");
+    if (actorMember.role !== "LEADER" && userId !== actor.id) throw forbidden("You can only remove yourself.");
+    const member = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: { select: { name: true } } } });
+    if (!member) throw notFound("That person is not a member of this project.");
+    if (member.role === "LEADER" && (await tx.projectMember.count({ where: { projectId, role: "LEADER" } })) <= 1) {
+      throw invalid("A project needs at least one leader. Make another member the leader first.");
+    }
     await tx.projectMember.delete({ where: { id: member.id } });
     await tx.task.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null } }); // tasks stay, unassigned
     await logActivity(tx, projectId, actor.id, "member.removed", userId === actor.id ? `${member.user.name} left the project.` : `${actor.name} removed ${member.user.name} from the project.`);
@@ -194,11 +216,19 @@ export async function removeMember(actor: Actor, projectId: string, userId: stri
 export async function setMemberRole(actor: Actor, projectId: string, userId: string, role: "LEADER" | "MEMBER") {
   const { level } = await getProjectAccess(actor, projectId);
   if (level !== "LEADER") throw forbidden("Only the project leader can change member roles.");
-  const m = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } } });
-  if (!m) throw notFound("That person is not a member of this project.");
-  if (m.role === "LEADER" && role === "MEMBER" && (await leaderCount(projectId)) <= 1) throw invalid("A project needs at least one leader.");
-  await prisma.projectMember.update({ where: { id: m.id }, data: { role } });
-  await logActivity(prisma, projectId, actor.id, "member.role", `${actor.name} changed a member's role to ${role.toLowerCase()}.`);
+  if (role !== "LEADER" && role !== "MEMBER") throw invalid("Unknown project member role.");
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const leader = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId: actor.id } }, select: { role: true } });
+    if (leader?.role !== "LEADER") throw forbidden("Only the project leader can change member roles.");
+    const member = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } } });
+    if (!member) throw notFound("That person is not a member of this project.");
+    if (member.role === "LEADER" && role === "MEMBER" && (await tx.projectMember.count({ where: { projectId, role: "LEADER" } })) <= 1) {
+      throw invalid("A project needs at least one leader.");
+    }
+    await tx.projectMember.update({ where: { id: member.id }, data: { role } });
+    await logActivity(tx, projectId, actor.id, "member.role", `${actor.name} changed a member's role to ${role.toLowerCase()}.`);
+  });
 }
 
 export async function rotateJoinCode(actor: Actor, projectId: string) {
@@ -209,14 +239,20 @@ export async function rotateJoinCode(actor: Actor, projectId: string) {
 
 export async function deleteProject(actor: Actor, projectId: string) {
   requireAdmin(actor);
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, title: true } });
-  if (!project) throw notFound("Project not found.");
-  const versions = await prisma.submissionVersion.findMany({ where: { submission: { projectId } }, select: { storageKey: true } });
   await prisma.$transaction(async (tx) => {
+    const project = await lockProject(tx, projectId);
+    const versions = await tx.submissionVersion.findMany({
+      where: { submission: { projectId } },
+      select: { storageKey: true },
+    });
+    await tx.pendingFileDeletion.createMany({
+      data: versions.map(({ storageKey }) => ({ storageKey })),
+      skipDuplicates: true,
+    });
     await tx.project.delete({ where: { id: projectId } });
     await audit(tx, actor.id, "project.deleted", "Project", projectId, { title: project.title });
   });
-  await Promise.all(versions.map((v) => deleteStoredFile(v.storageKey)));
+  return (await retryPendingFileDeletions()).pending > 0;
 }
 
 export async function listProjects(actor: Actor, opts: { q?: string; status?: ProjectStatus; page?: number } = {}) {
@@ -232,7 +268,7 @@ export async function listProjects(actor: Actor, opts: { q?: string; status?: Pr
     }),
     prisma.project.count({ where }),
   ]);
-  const stats = await projectStats(items.map((p) => p.id));
+  const stats = await projectStats(items.map((p) => p.id), new Date(), actor.role !== "ADMIN");
   return { items: items.map((p) => ({ ...p, stats: stats.get(p.id)! })), total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
@@ -247,6 +283,6 @@ export async function getProject(actor: Actor, projectId: string) {
       milestones: { orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }] },
     },
   });
-  const stats = (await projectStats([projectId])).get(projectId)!;
+  const stats = (await projectStats([projectId], new Date(), actor.role !== "ADMIN")).get(projectId)!;
   return { project: { ...project, joinCode: level === "LEADER" ? project.joinCode : null }, level, stats };
 }

@@ -51,6 +51,16 @@ npm run db:seed
 ```
 Creates the admin from your `.env` values with *must change password at first sign-in*. It refuses to run when `NODE_ENV=production`. Create supervisors from **Users → Create account** while signed in as admin.
 
+For an approved first-production-admin bootstrap, use a one-time deployment command against the intended production database; do not enable public registration for privileged roles:
+```powershell
+$env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
+$env:BOOTSTRAP_ADMIN_PASSWORD = "<strong unique temporary password>"
+$env:BOOTSTRAP_ADMIN_CONFIRM = "CREATE_FIRST_ADMIN"
+npm run db:bootstrap-admin
+Remove-Item Env:BOOTSTRAP_ADMIN_EMAIL,Env:BOOTSTRAP_ADMIN_PASSWORD,Env:BOOTSTRAP_ADMIN_CONFIRM
+```
+The command serializes concurrent attempts, refuses to run if any administrator already exists, requires explicit confirmation, records an audit event, and forces a password change at first sign-in. Run it only from a trusted operator environment with access to the production database. Never store the bootstrap secret in deployment configuration or source control.
+
 ## 7. Run
 ```powershell
 npm run dev
@@ -73,14 +83,17 @@ Tests cover: registration/login/invalid credentials/rate limiting/sessions; role
 - Passwords hashed with bcrypt (cost 12); 10–72 byte limit enforced.
 - Server-side sessions: random token in an `HttpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored, so logout, deactivation, role change and password change revoke access immediately. 8-hour expiry.
 - Every page, action and API route re-checks the user on the server. `getProjectAccess` is the single rule for project visibility; unauthorised records return "not found" (no IDOR).
+- Administrators manage project metadata and accounts but cannot read student submissions, downloads, or review feedback; those are limited to project members and the assigned supervisor.
 - All mutations are Next.js Server Actions (built-in Origin check against CSRF). Zod validates every input on the server.
 - Login/registration/join-code rate limiting (database counters); identical login errors for unknown email, wrong password and deactivated accounts.
 - Uploads: extension allow-list, file-signature check, size limit, random storage names, private folder, download only through an authorised route (`Content-Disposition: attachment`, `nosniff`).
+- `MAX_UPLOAD_MB` must be a whole number from 1 to 10 MB; Next.js Server Actions accept up to 12 MB of request data so multipart overhead remains covered.
 - Audit log for sign-ins, account/role changes, supervisor assignment and project deletion; no secrets recorded. CSV export neutralises formula injection.
 
 ## Known limitations (be upfront about these in your report)
 - **No email**: no verification or password-reset emails (no mail provider is configured). Admins can set a temporary password; users must change it at next sign-in.
 - **Document storage**: local development uses private files in `./storage`; production on Vercel uses private Vercel Blob objects. Configure `BLOB_READ_WRITE_TOKEN` in the Vercel project’s server-side environment settings (never as a `NEXT_PUBLIC_` variable). Downloads are authorized and streamed through `/api/files/[versionId]`; Blob URLs are not exposed to clients. Existing local-file records remain readable where their files still exist, but local files from previous ephemeral Vercel instances cannot be migrated automatically.
+- **Project deletion cleanup**: storage object deletions are recorded before project data is removed. Failed deletes remain queued and can be retried with `npm run db:cleanup-files`; schedule this command in a trusted operator environment to reconcile transient provider failures.
 - **Deadline reminders** are created on the server when a user next opens the app (no background scheduler locally).
 - Joining a project is by **join code or leader invitation**; there is no approval queue.
 - One supervisor per project. Supervisors may create tasks for assigned projects; students update their own assigned task statuses.

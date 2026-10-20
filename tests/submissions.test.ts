@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { addFeedback } from "@/server/services/feedback";
-import { assignSupervisor } from "@/server/services/projects";
+import { listActivity } from "@/server/services/activity";
+import { addFeedback, listRecentFeedback } from "@/server/services/feedback";
+import { assignSupervisor, getProject } from "@/server/services/projects";
 import { addVersion, createSubmission, getSubmission, getVersionDownload, listSubmissions } from "@/server/services/submissions";
 import { deleteStoredFile } from "@/lib/storage";
 import { makeProject, makeUser, pdf, resetDb } from "./helpers";
@@ -19,13 +20,17 @@ const meta = { title: "Proposal", description: "First draft", note: "" };
 
 describe("document submission", () => {
   it("stores version 1, notifies the supervisor and logs activity", async () => {
-    const { lead, sup, p } = await setup();
+    const { lead, sup, admin, p } = await setup();
     const s = await createSubmission(lead, p.id, meta, pdf());
     const v = await prisma.submissionVersion.findFirstOrThrow({ where: { submissionId: s.id } });
     expect(v.versionNumber).toBe(1);
     expect(v.storageKey).toMatch(/^[0-9a-f-]{36}\.pdf$/); // random server-generated name
     expect(await prisma.notification.count({ where: { userId: sup.id, type: "SUBMISSION" } })).toBe(1);
     expect(await prisma.projectActivity.count({ where: { type: "submission.created" } })).toBe(1);
+    expect((await getProject(admin, p.id)).stats.pendingReviews).toBe(0);
+    expect((await getProject(sup, p.id)).stats.pendingReviews).toBe(1);
+    expect((await listActivity(admin, p.id)).some((activity) => activity.type === "submission.created")).toBe(false);
+    expect((await listActivity(sup, p.id)).some((activity) => activity.type === "submission.created")).toBe(true);
   });
   it("rejects bad files and missing fields without creating records", async () => {
     const { lead, p } = await setup();
@@ -86,13 +91,16 @@ describe("feedback and revisions", () => {
     expect(await prisma.notification.count({ where: { userId: sup.id, type: "FEEDBACK" } })).toBe(1);
     expect((await prisma.submission.findUniqueOrThrow({ where: { id: s.id } })).status).toBe("SUBMITTED");
   });
-  it("blocks unassigned supervisors and outsiders (not found), and admins cannot decide", async () => {
+  it("blocks unassigned supervisors, outsiders and administrators from private submissions", async () => {
     const { lead, outsider, otherSup, admin, p } = await setup();
     const s = await createSubmission(lead, p.id, meta, pdf());
     await expect(addFeedback(otherSup, s.id, { body: "Hi", decision: "ACCEPTED" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(addFeedback(outsider, s.id, { body: "Hi" })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(addFeedback(admin, s.id, { body: "Hi", decision: "ACCEPTED" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(addFeedback(admin, s.id, { body: "Hi" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(getSubmission(otherSup, s.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getSubmission(admin, s.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(listSubmissions(admin)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(listRecentFeedback(admin)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
   it("rejects empty feedback", async () => {
     const { lead, sup, p } = await setup();
@@ -102,15 +110,15 @@ describe("feedback and revisions", () => {
 });
 
 describe("file access", () => {
-  it("serves files to members, the assigned supervisor and admins only", async () => {
+  it("serves files only to project members and the assigned supervisor", async () => {
     const { lead, outsider, sup, otherSup, admin, p } = await setup();
     const s = await createSubmission(lead, p.id, meta, pdf());
     const v = await prisma.submissionVersion.findFirstOrThrow({ where: { submissionId: s.id } });
-    for (const who of [lead, sup, admin]) {
+    for (const who of [lead, sup]) {
       const { stream } = await getVersionDownload(who, v.id);
       expect(await new Response(stream).text()).toContain("%PDF");
     }
-    for (const who of [outsider, otherSup]) await expect(getVersionDownload(who, v.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    for (const who of [outsider, otherSup, admin]) await expect(getVersionDownload(who, v.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect((await listSubmissions(outsider)).total).toBe(0);
     expect((await listSubmissions(sup)).total).toBe(1);
     expect((await listSubmissions(otherSup)).total).toBe(0);

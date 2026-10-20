@@ -11,7 +11,7 @@ export type ProjectStats = {
  * Progress = recorded tasks completed / recorded tasks, and milestones completed / milestones.
  * It measures activity recorded in the system, NOT the academic quality of the work.
  */
-export async function projectStats(projectIds: string[], now = new Date()): Promise<Map<string, ProjectStats>> {
+export async function projectStats(projectIds: string[], now = new Date(), includeSubmissionCounts = true): Promise<Map<string, ProjectStats>> {
   const out = new Map<string, ProjectStats>();
   for (const id of projectIds) {
     out.set(id, { tasksTotal: 0, tasksDone: 0, tasksInProgress: 0, tasksOverdue: 0, milestonesTotal: 0, milestonesDone: 0, pendingReviews: 0, taskPercent: null, milestonePercent: null });
@@ -22,7 +22,9 @@ export async function projectStats(projectIds: string[], now = new Date()): Prom
     prisma.task.groupBy({ by: ["projectId", "status"], where: { projectId: inIds }, _count: { _all: true } }),
     prisma.task.groupBy({ by: ["projectId"], where: { projectId: inIds, status: { not: "COMPLETED" }, dueDate: { lt: now } }, _count: { _all: true } }),
     prisma.milestone.groupBy({ by: ["projectId", "status"], where: { projectId: inIds }, _count: { _all: true } }),
-    prisma.submission.groupBy({ by: ["projectId"], where: { projectId: inIds, status: "SUBMITTED" }, _count: { _all: true } }),
+    includeSubmissionCounts
+      ? prisma.submission.groupBy({ by: ["projectId"], where: { projectId: inIds, status: "SUBMITTED" }, _count: { _all: true } })
+      : Promise.resolve([]),
   ]);
   for (const t of tasks) {
     const s = out.get(t.projectId); if (!s) continue;

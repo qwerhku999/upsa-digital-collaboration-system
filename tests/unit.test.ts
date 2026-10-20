@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { csvCell, toCsv } from "@/lib/csv";
-import { validateUpload } from "@/lib/files";
+import { maxUploadBytes, validateUpload } from "@/lib/files";
 import { isOverdue, percent } from "@/lib/progress";
 import { safeDisplayName } from "@/lib/files";
 import { allowedTransitions } from "@/server/services/projects";
@@ -19,6 +19,18 @@ describe("CSV export safety", () => {
 
 describe("upload validation", () => {
   const f = (name: string, bytes: number[] | string) => ({ name, size: 10, buffer: Buffer.from(bytes as never) });
+  it("rejects an invalid configured upload limit", () => {
+    const original = process.env.MAX_UPLOAD_MB;
+    process.env.MAX_UPLOAD_MB = "not-a-number";
+    try {
+      expect(() => maxUploadBytes()).toThrow("MAX_UPLOAD_MB must be a whole number from 1 to 10.");
+      process.env.MAX_UPLOAD_MB = "11";
+      expect(() => maxUploadBytes()).toThrow("MAX_UPLOAD_MB must be a whole number from 1 to 10.");
+    } finally {
+      if (original === undefined) delete process.env.MAX_UPLOAD_MB;
+      else process.env.MAX_UPLOAD_MB = original;
+    }
+  });
   it("accepts a real PDF", () => expect(validateUpload(f("a.pdf", "%PDF-1.4 x")).mime).toBe("application/pdf"));
   it("rejects disallowed extensions", () => expect(() => validateUpload(f("virus.exe", "MZ"))).toThrow(/not allowed/));
   it("rejects a mismatched signature", () => expect(() => validateUpload(f("fake.pdf", "<html>"))).toThrow(/do not match/));

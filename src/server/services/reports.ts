@@ -12,15 +12,19 @@ export async function projectReport(actor: Actor) {
     orderBy: { title: "asc" },
     include: { supervisor: { select: { name: true } }, _count: { select: { members: true } } },
   });
-  const stats = await projectStats(projects.map((p) => p.id));
+  const stats = await projectStats(projects.map((p) => p.id), new Date(), actor.role !== "ADMIN");
   return projects.map((p) => ({ project: p, stats: stats.get(p.id)! }));
 }
 
 export async function projectReportCsv(actor: Actor): Promise<string> {
   const rows = await projectReport(actor);
   const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
+  const headers = ["Project", "Status", "Supervisor", "Members", "Due date", "Tasks total", "Tasks completed", "Tasks overdue", "Task completion %", "Milestones total", "Milestones completed"];
   return toCsv([
-    ["Project", "Status", "Supervisor", "Members", "Due date", "Tasks total", "Tasks completed", "Tasks overdue", "Task completion %", "Milestones total", "Milestones completed", "Submissions awaiting review"],
-    ...rows.map(({ project: p, stats: s }) => [p.title, p.status, p.supervisor?.name ?? "", p._count.members, fmt(p.dueDate), s.tasksTotal, s.tasksDone, s.tasksOverdue, s.taskPercent ?? "", s.milestonesTotal, s.milestonesDone, s.pendingReviews]),
+    actor.role === "ADMIN" ? headers : [...headers, "Submissions awaiting review"],
+    ...rows.map(({ project: p, stats: s }) => {
+      const row = [p.title, p.status, p.supervisor?.name ?? "", p._count.members, fmt(p.dueDate), s.tasksTotal, s.tasksDone, s.tasksOverdue, s.taskPercent ?? "", s.milestonesTotal, s.milestonesDone];
+      return actor.role === "ADMIN" ? row : [...row, s.pendingReviews];
+    }),
   ]);
 }

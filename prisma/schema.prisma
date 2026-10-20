@@ -340,3 +340,15 @@ model RateLimit {
   count       Int
   windowStart DateTime
 }
+
+model PendingFileDeletion {
+  id            String   @id @default(cuid())
+  storageKey    String   @unique
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([nextAttemptAt])
+}

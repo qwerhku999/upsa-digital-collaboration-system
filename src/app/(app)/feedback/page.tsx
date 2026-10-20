@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Badge, Card, Empty, PageHead } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { fmtDateTime } from "@/lib/format";
 import { listRecentFeedback } from "@/server/services/feedback";
 
 export const metadata = { title: "Feedback | Project Hub" };
 
 export default async function FeedbackPage() {
-  const user = await requireUser();
+  const user = await requireRole("STUDENT", "SUPERVISOR");
   const items = await listRecentFeedback(user, 40);
   return (
     <>

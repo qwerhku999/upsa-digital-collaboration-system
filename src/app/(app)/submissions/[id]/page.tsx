@@ -5,7 +5,7 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, Empty, PageHead } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ALLOWED_EXTENSIONS } from "@/lib/files";
+import { ALLOWED_EXTENSIONS, maxUploadMb } from "@/lib/files";
 import { fmtDateTime } from "@/lib/format";
 import { getSubmission } from "@/server/services/submissions";
 
@@ -45,7 +45,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
             <ActionForm action={addVersionAction}>
               <input type="hidden" name="submissionId" value={s.id} />
               <h3>Upload a revised version</h3>
-              <div className="field"><label htmlFor="v-f">File</label><input id="v-f" name="file" type="file" required accept={ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(",")} /></div>
+              <div className="field"><label htmlFor="v-f">File</label><input id="v-f" name="file" type="file" required accept={ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(",")} /><small>Maximum {maxUploadMb()} MB.</small></div>
               <div className="field"><label htmlFor="v-n">What changed? (optional)</label><textarea id="v-n" name="note" maxLength={1000} /></div>
               <SubmitButton pendingText="Uploading…">Upload new version</SubmitButton>
             </ActionForm>

@@ -24,7 +24,14 @@ const TYPES: Record<string, { mime: string; magic: number[] | null }> = {
 };
 
 export const ALLOWED_EXTENSIONS = Object.keys(TYPES);
-export const maxUploadBytes = () => Math.max(1, Number(process.env.MAX_UPLOAD_MB ?? 10)) * 1024 * 1024;
+export const maxUploadMb = () => {
+  const configuredMb = Number(process.env.MAX_UPLOAD_MB ?? 10);
+  if (!Number.isInteger(configuredMb) || configuredMb < 1 || configuredMb > 10) {
+    throw new Error("MAX_UPLOAD_MB must be a whole number from 1 to 10.");
+  }
+  return configuredMb;
+};
+export const maxUploadBytes = () => maxUploadMb() * 1024 * 1024;
 
 export function safeDisplayName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? "file";

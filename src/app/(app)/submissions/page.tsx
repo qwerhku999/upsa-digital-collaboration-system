@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { SubmissionStatus } from "@prisma/client";
 import { Badge, Card, Empty, PageHead, Pagination } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { fmtDate, label, one } from "@/lib/format";
 import { listSubmissions } from "@/server/services/submissions";
 
@@ -9,7 +9,7 @@ export const metadata = { title: "Submissions | Project Hub" };
 const STATUSES: SubmissionStatus[] = ["SUBMITTED", "REVISION_REQUIRED", "ACCEPTED"];
 
 export default async function SubmissionsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user = await requireUser();
+  const user = await requireRole("STUDENT", "SUPERVISOR");
   const sp = await searchParams;
   const status = STATUSES.find((s) => s === one(sp.status));
   const page = Math.max(1, Number(one(sp.page)) || 1);

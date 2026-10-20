@@ -66,6 +66,7 @@ export async function addVersion(actor: Actor, submissionId: string, note: strin
 }
 
 export async function listSubmissions(actor: Actor, opts: { projectId?: string; status?: SubmissionStatus; page?: number } = {}) {
+  if (actor.role === "ADMIN") throw forbidden("Administrators cannot access private student submissions.");
   const where: Prisma.SubmissionWhereInput = {
     project: { ...accessibleProjectsWhere(actor), ...(opts.projectId ? { id: opts.projectId } : {}) },
     ...(opts.status ? { status: opts.status } : {}),
@@ -81,6 +82,7 @@ export async function listSubmissions(actor: Actor, opts: { projectId?: string; 
 }
 
 export async function getSubmission(actor: Actor, id: string) {
+  if (actor.role === "ADMIN") throw notFound("Submission not found.");
   const sub = await prisma.submission.findUnique({ where: { id }, select: { projectId: true } });
   if (!sub) throw notFound("Submission not found.");
   const { project, level } = await getProjectAccess(actor, sub.projectId);
@@ -97,6 +99,7 @@ export async function getSubmission(actor: Actor, id: string) {
 
 /** Authorization is re-checked before reading storage; blob URLs never leave the server. */
 export async function getVersionDownload(actor: Actor, versionId: string) {
+  if (actor.role === "ADMIN") throw notFound("File not found.");
   const v = await prisma.submissionVersion.findUnique({ where: { id: versionId }, include: { submission: { select: { projectId: true } } } });
   if (!v) throw notFound("File not found.");
   await getProjectAccess(actor, v.submission.projectId);

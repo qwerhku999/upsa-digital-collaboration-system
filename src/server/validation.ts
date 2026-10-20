@@ -124,6 +124,6 @@ export const supervisionMeetingSchema = z.object({
 export const adminCreateUserSchema = z.object({
   name: text("Name", 100).min(2, "Name is too short."),
   email: emailSchema,
-  role: z.enum(["STUDENT", "SUPERVISOR", "ADMIN"]),
+  role: z.enum(["SUPERVISOR", "ADMIN"]),
   password: passwordSchema,
 });

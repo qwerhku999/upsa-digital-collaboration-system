@@ -229,6 +229,8 @@ th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
 .timeline { padding: 0; margin: 0; list-style: none; }
 .timeline li { padding: 10px 0 10px 16px; margin-left: 6px; border-left: 3px solid var(--border); }
 .timeline time { display: block; color: var(--muted); font-size: 12px; }
+.join-code { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.join-code strong { overflow-wrap: anywhere; }
 details.inline { margin-top: 8px; }
 details.inline summary { color: var(--brand); font-weight: 700; cursor: pointer; }
 .unread { background: var(--unread-bg); }

@@ -17,8 +17,8 @@ export async function getDashboard(actor: Actor) {
     prisma.task.findMany({ where: { ...taskScope, status: { not: "COMPLETED" }, dueDate: { gte: now, lte: in14 } }, orderBy: { dueDate: "asc" }, take: 6, include: { project: { select: { id: true, title: true } } } }),
     prisma.milestone.findMany({ where: { project, status: { not: "COMPLETED" }, dueDate: { not: null, lte: in14 } }, orderBy: { dueDate: "asc" }, take: 6, include: { project: { select: { id: true, title: true } } } }),
     prisma.milestone.groupBy({ by: ["status"], where: { project }, _count: { _all: true } }),
-    prisma.submission.count({ where: { project, status: "SUBMITTED" } }),
-    prisma.feedback.findMany({
+    actor.role === "ADMIN" ? 0 : prisma.submission.count({ where: { project, status: "SUBMITTED" } }),
+    actor.role === "ADMIN" ? [] : prisma.feedback.findMany({
       where: { submission: { project } }, orderBy: { createdAt: "desc" }, take: 5,
       include: { author: { select: { name: true } }, submission: { select: { id: true, title: true } } },
     }),

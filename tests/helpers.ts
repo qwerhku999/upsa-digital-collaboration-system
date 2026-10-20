@@ -14,7 +14,7 @@ export const PASSWORD = "Password123!";
 let counter = 0;
 
 export async function resetDb() {
-  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "User","Project","RateLimit","AuditLog" RESTART IDENTITY CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "User","Project","RateLimit","AuditLog","PendingFileDeletion" RESTART IDENTITY CASCADE`);
 }
 
 export async function makeUser(role: UserRole = "STUDENT", name?: string, extra: { active?: boolean } = {}): Promise<Actor> {
