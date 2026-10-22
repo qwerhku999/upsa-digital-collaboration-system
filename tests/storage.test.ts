@@ -14,7 +14,8 @@ describe("private Vercel Blob storage", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VERCEL", "1");
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "test-token");
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
+    vi.stubEnv("BLOB_STORE_ID", "test-store");
     vi.clearAllMocks();
   });
 
@@ -22,7 +23,7 @@ describe("private Vercel Blob storage", () => {
     vi.unstubAllEnvs();
   });
 
-  it("uploads using private access and stores only a pathname reference", async () => {
+  it("uploads using OIDC-compatible options when no read-write token is configured", async () => {
     blobSdk.put.mockResolvedValue({ pathname: "documents/123e4567-e89b-12d3-a456-426614174000.pdf" });
 
     const key = await saveFile(Buffer.from("%PDF"), "pdf", "application/pdf");
@@ -30,13 +31,18 @@ describe("private Vercel Blob storage", () => {
     expect(blobSdk.put).toHaveBeenCalledWith(
       expect.stringMatching(/^documents\/[0-9a-f-]{36}\.pdf$/),
       Buffer.from("%PDF"),
-      expect.objectContaining({ access: "private", token: "test-token", contentType: "application/pdf", allowOverwrite: false }),
+      {
+        access: "private",
+        allowOverwrite: false,
+        addRandomSuffix: false,
+        contentType: "application/pdf",
+      },
     );
     expect(key).toBe("vercel-blob:documents/123e4567-e89b-12d3-a456-426614174000.pdf");
     expect(key).not.toContain("blob.vercel-storage.com");
   });
 
-  it("gets a private blob as a stream and deletes by pathname", async () => {
+  it("gets and deletes private blobs using OIDC-compatible options without a read-write token", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode("%PDF"));
@@ -49,22 +55,39 @@ describe("private Vercel Blob storage", () => {
     expect(await readStoredFile(key)).toBe(stream);
     expect(blobSdk.get).toHaveBeenCalledWith("documents/123e4567-e89b-12d3-a456-426614174000.pdf", {
       access: "private",
-      token: "test-token",
     });
 
     await deleteStoredFile(key);
-    expect(blobSdk.del).toHaveBeenCalledWith("documents/123e4567-e89b-12d3-a456-426614174000.pdf", { token: "test-token" });
+    expect(blobSdk.del).toHaveBeenCalledWith("documents/123e4567-e89b-12d3-a456-426614174000.pdf", {});
+  });
+
+  it("passes an explicitly configured read-write token to upload, download and delete", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "test-token");
+    blobSdk.put.mockResolvedValue({ pathname: "documents/123e4567-e89b-12d3-a456-426614174000.pdf" });
+    blobSdk.get.mockResolvedValue({
+      statusCode: 200,
+      stream: new ReadableStream<Uint8Array>(),
+    });
+
+    const key = await saveFile(Buffer.from("%PDF"), "pdf", "application/pdf");
+    await readStoredFile(key);
+    await deleteStoredFile(key);
+
+    expect(blobSdk.put).toHaveBeenCalledWith(
+      expect.any(String),
+      Buffer.from("%PDF"),
+      expect.objectContaining({ access: "private", token: "test-token" }),
+    );
+    expect(blobSdk.get).toHaveBeenCalledWith(expect.any(String), {
+      access: "private",
+      token: "test-token",
+    });
+    expect(blobSdk.del).toHaveBeenCalledWith(expect.any(String), { token: "test-token" });
   });
 
   it("returns null for a blob that no longer exists", async () => {
     blobSdk.get.mockResolvedValue(null);
     await expect(readStoredFile("vercel-blob:documents/123e4567-e89b-12d3-a456-426614174000.pdf")).resolves.toBeNull();
-  });
-
-  it("fails clearly when the production Blob token is missing", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
-    await expect(saveFile(Buffer.from("%PDF"), "pdf")).rejects.toThrow("BLOB_READ_WRITE_TOKEN is required");
-    expect(blobSdk.put).not.toHaveBeenCalled();
   });
 
   it("keeps non-production uploads on local storage", async () => {

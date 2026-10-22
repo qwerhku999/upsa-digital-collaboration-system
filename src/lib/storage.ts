@@ -12,10 +12,9 @@ function isVercelProduction() {
   return process.env.VERCEL === "1" && process.env.NODE_ENV === "production";
 }
 
-function blobToken() {
+function blobAuthOptions() {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) throw new Error("BLOB_READ_WRITE_TOKEN is required for Vercel production document storage.");
-  return token;
+  return token ? { token } : {};
 }
 
 function blobPath(storageKey: string) {
@@ -31,7 +30,7 @@ export async function saveFile(buffer: Buffer, ext: string, contentType?: string
     const pathname = `documents/${randomUUID()}.${ext}`;
     const blob = await put(pathname, buffer, {
       access: "private",
-      token: blobToken(),
+      ...blobAuthOptions(),
       allowOverwrite: false,
       addRandomSuffix: false,
       ...(contentType ? { contentType } : {}),
@@ -47,7 +46,7 @@ export async function saveFile(buffer: Buffer, ext: string, contentType?: string
 
 export async function readStoredFile(key: string): Promise<ReadableStream<Uint8Array> | null> {
   if (key.startsWith(BLOB_KEY_PREFIX)) {
-    const blob = await get(blobPath(key), { access: "private", token: blobToken() });
+    const blob = await get(blobPath(key), { access: "private", ...blobAuthOptions() });
     return blob?.statusCode === 200 ? blob.stream : null;
   }
   if (!LOCAL_KEY.test(key)) throw new Error("Invalid local storage key.");
@@ -79,7 +78,7 @@ export async function readStoredFile(key: string): Promise<ReadableStream<Uint8A
 
 export async function deleteStoredFile(key: string): Promise<void> {
   if (key.startsWith(BLOB_KEY_PREFIX)) {
-    await del(blobPath(key), { token: blobToken() });
+    await del(blobPath(key), blobAuthOptions());
     return;
   }
   if (!LOCAL_KEY.test(key)) return;
