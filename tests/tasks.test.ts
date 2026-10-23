@@ -55,6 +55,27 @@ describe("task creation and assignment", () => {
 });
 
 describe("task status, editing and filtering", () => {
+  it("notifies the project group and assigned supervisor when task status changes", async () => {
+    const { lead, member, p } = await setup();
+    const admin = await makeUser("ADMIN");
+    const supervisor = await makeUser("SUPERVISOR");
+    await assignSupervisor(admin, p.id, supervisor.id);
+    const task = await createTask(lead, p.id, { title: "Prepare presentation", assigneeId: member.id });
+
+    await setTaskStatus(member, task.id, "IN_PROGRESS");
+
+    const statusNotifications = await prisma.notification.findMany({
+      where: { type: "TASK", title: "Task status updated" },
+      select: { userId: true, projectId: true, link: true, message: true },
+    });
+    expect(statusNotifications).toHaveLength(2);
+    expect(statusNotifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: lead.id, projectId: p.id, link: `/projects/${p.id}?tab=tasks`, message: '"Prepare presentation" is now in progress.' }),
+      expect.objectContaining({ userId: supervisor.id, projectId: p.id, link: `/projects/${p.id}?tab=tasks`, message: '"Prepare presentation" is now in progress.' }),
+    ]));
+    expect(await prisma.notification.count({ where: { userId: member.id, type: "TASK", title: "Task status updated" } })).toBe(0);
+  });
+
   it("lets the assignee (not other members) update status", async () => {
     const { lead, member, p } = await setup();
     const third = await makeUser("STUDENT"); await addMemberByEmail(lead, p.id, third.email);

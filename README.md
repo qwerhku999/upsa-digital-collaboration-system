@@ -32,6 +32,7 @@ In pgAdmin (Query Tool) or `psql -U postgres`:
 CREATE DATABASE upsa_collaboration;
 CREATE DATABASE upsa_collaboration_test;   -- used only by automated tests (gets wiped)
 ```
+The test suite applies migrations and truncates test tables. It now refuses to run unless `DATABASE_URL_TEST` names exactly `upsa_collaboration_test` and points to a different PostgreSQL database from `DATABASE_URL`. Never point it at `upsa_collaboration` or another database containing real data.
 
 ## 4. Configure `.env`
 ```powershell
@@ -90,6 +91,11 @@ Tests cover: registration/login/invalid credentials/rate limiting/sessions; role
 - `MAX_UPLOAD_MB` must be a whole number from 1 to 10 MB; Next.js Server Actions accept up to 12 MB of request data so multipart overhead remains covered.
 - Audit log for sign-ins, account/role changes, supervisor assignment and project deletion; no secrets recorded. CSV export neutralises formula injection.
 
+## Safe local task-notification demo
+The local notification demo uses a separate `upsa_collaboration_demo` database; it does not change `.env` or use the application or test database for demo data. Demo sign-in details are kept in the ignored local file `.env.demo.credentials`. Start the app with `npm run demo:start`; it binds only to `127.0.0.1:3002` and refuses to start if the configured database identities are unexpected.
+
+Sign in as the demo student, open the demo project, and change the assigned task status. Then sign in as the demo supervisor and open **Notifications** to see the status update. The person who changes a status is intentionally excluded from that event's notifications. Use **Mark as read** on the supervisor notification to verify the read flow.
+
 ## Known limitations (be upfront about these in your report)
 - **No email**: no verification or password-reset emails (no mail provider is configured). Admins can set a temporary password; users must change it at next sign-in.
 - **Document storage**: local development uses private files in `./storage`; Vercel Blob operations use private objects. With a Vercel project connected to the Blob store, the Blob SDK uses Vercel OIDC and `BLOB_STORE_ID`; `BLOB_READ_WRITE_TOKEN` is optional for environments that use token-based authentication instead. Keep any configured token server-side (never as a `NEXT_PUBLIC_` variable). Downloads are authorized and streamed through `/api/files/[versionId]`; Blob URLs are not exposed to clients. The current storage branch selects Blob when `VERCEL=1` and `NODE_ENV=production`; it does not explicitly distinguish Production from Preview. Otherwise, it uses the local filesystem, which may be ephemeral in hosted environments. Existing local-file records remain readable where their files still exist, but local files from previous ephemeral Vercel instances cannot be migrated automatically.
@@ -104,7 +110,7 @@ Tests cover: registration/login/invalid credentials/rate limiting/sessions; role
 - **`P1001 Can't reach database server`** – PostgreSQL service not running (Windows *Services* → `postgresql-x64-…` → Start), or wrong host/port.
 - **`P1000 Authentication failed`** – wrong password in `DATABASE_URL`; URL-encode special characters.
 - **`database "upsa_collaboration" does not exist`** – run the `CREATE DATABASE` statements in step 3.
-- **Tests: "DATABASE_URL_TEST must point to a database whose name contains 'test'"** – safety check; fix `.env`.
+- **Tests: dedicated test database safety check fails** – set `DATABASE_URL_TEST` in `.env` to the separate `upsa_collaboration_test` database; tests will not run against the application database.
 - **`EADDRINUSE` / port 3000 busy** – `npm run dev -- -p 3001`.
 - **Prisma `EPERM` rename error on Windows** – stop `npm run dev` and any Prisma Studio, then re-run `npx prisma generate`.
 - **Stuck on the login page** – clear the `upsa_session` cookie; make sure you ran `npm run db:seed` and used the seed credentials.

@@ -5,7 +5,7 @@ import { parse, taskListFilterSchema, taskSchema } from "@/server/validation";
 import { accessibleProjectsWhere, canManage, getProjectAccess, isStudentLevel, type AccessLevel, type Actor } from "./access";
 import { logActivity } from "./activity";
 import { PAGE_SIZE, paginate } from "./audit";
-import { notify } from "./notifications";
+import { notify, projectRecipients } from "./notifications";
 
 type TaskInput = ReturnType<typeof parseTask>;
 const parseTask = (input: unknown) => parse(taskSchema, input);
@@ -66,6 +66,15 @@ export async function setTaskStatus(actor: Actor, taskId: string, status: TaskSt
   await prisma.$transaction(async (tx) => {
     await tx.task.update({ where: { id: taskId }, data: { status, completedAt: status === "COMPLETED" ? new Date() : null } });
     await logActivity(tx, project.id, actor.id, "task.status", `${actor.name} moved "${task.title}" to ${status.replace("_", " ").toLowerCase()}.`);
+    if (task.status !== status) {
+      await notify(tx, await projectRecipients(tx, project.id, actor.id), {
+        type: "TASK",
+        projectId: project.id,
+        link: `/projects/${project.id}?tab=tasks`,
+        title: "Task status updated",
+        message: `"${task.title}" is now ${status.replace("_", " ").toLowerCase()}.`,
+      });
+    }
   });
 }
 

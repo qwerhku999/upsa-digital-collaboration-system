@@ -6,6 +6,7 @@ import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { Actor } from "@/server/services/access";
 import { createProject } from "@/server/services/projects";
+import { assertDedicatedTestDatabase } from "./database-safety";
 
 // Uploaded test files go to a throwaway folder, never the real ./storage.
 process.env.STORAGE_DIR = mkdtempSync(path.join(os.tmpdir(), "upsa-test-"));
@@ -14,6 +15,7 @@ export const PASSWORD = "Password123!";
 let counter = 0;
 
 export async function resetDb() {
+  assertDedicatedTestDatabase(process.env.DATABASE_URL);
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "User","Project","RateLimit","AuditLog","PendingFileDeletion" RESTART IDENTITY CASCADE`);
 }
 
