@@ -92,8 +92,24 @@ model User {
   activities         ProjectActivity[]
   auditLogs          AuditLog[]
   recordedMeetings   SupervisionMeeting[] @relation("MeetingRecorder")
+  createdRegistrationInvites RegistrationInviteCode[] @relation("RegistrationInviteCreator")
 
   @@index([role, active])
+}
+
+model RegistrationInviteCode {
+  id          String    @id @default(cuid())
+  codeHash    String    @unique
+  createdById String
+  maxUses     Int
+  uses        Int       @default(0)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  createdBy User @relation("RegistrationInviteCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt, revokedAt])
 }
 
 // Server-side session. `id` is the SHA-256 of the cookie token (the raw token is never stored).

@@ -9,9 +9,9 @@ This is an independent student project; it is **not** an official UPSA system an
 
 | Role | Can do |
 |---|---|
-| **Student** | Register; choose an academic category/semester and create a project with their own topic (becomes leader), or join a student-created project with a code; manage members; create/assign/update tasks; track milestones; submit documents and revised versions; read supervisor feedback and reply; see supervision meeting notes, dashboard, deadlines, notifications and the project activity timeline. |
+| **Student** | Register with an invitation code from an administrator; choose an academic category/semester and create a project with their own topic (becomes leader), or join a student-created project with a code; manage members; create/assign/update tasks; track milestones; submit documents and revised versions; read supervisor feedback and reply; see supervision meeting notes, dashboard, deadlines, notifications and the project activity timeline. |
 | **Supervisor** | See **only projects an administrator assigned to them**; monitor and create project tasks; manage milestones; record supervision meetings and action items; review submissions with structured feedback (comment, request revision, accept); move a project to *revision required* / *completed*; reports and CSV export; notifications. |
-| **Administrator** | Create broad academic categories and semesters for students to choose from; assign or reassign supervisors; create supervisor/admin accounts; change roles; activate/deactivate accounts; delete projects; read the audit log. Administrators do not create or edit student research topics or assign students to topic projects. Created by the seed script — never by public registration. |
+| **Administrator** | Create and rotate student registration invitation codes; create broad academic categories and semesters for students to choose from; assign or reassign supervisors; create supervisor/admin accounts; change roles; activate/deactivate accounts; delete projects; read the audit log. Administrators do not create or edit student research topics or assign students to topic projects. Created by the seed script — never by public registration. |
 
 Progress figures = completed ÷ recorded tasks (and milestones). They describe recorded activity, **not** quality, and the system never grades work: review decisions are made by the supervisor.
 
@@ -45,12 +45,14 @@ Edit `.env`: put your PostgreSQL password in both URLs (URL-encode special chara
 npx prisma migrate dev --name init
 ```
 This creates `prisma/migrations/…_init` from `prisma/schema.prisma` and applies it. **Commit the generated `prisma/migrations` folder.** Later schema changes: edit the schema and run `npx prisma migrate dev --name describe_change`.
+Apply committed migrations to a deployment database with `npm run db:deploy` before serving code that depends on the new schema.
 
 ## 6. Create the first administrator (development only)
 ```powershell
 npm run db:seed
 ```
 Creates the admin from your `.env` values with *must change password at first sign-in*. It refuses to run when `NODE_ENV=production`. Create supervisors from **Users → Create account** while signed in as admin.
+Create student invitations in **Users → Student registration invitations**. A generated code is displayed once; share it only with intended students. Codes default to 7 days and 25 registrations, with administrator-selected limits of 1–30 days and 1–100 registrations. Administrators can revoke individual codes or rotate them to revoke all active codes and issue a replacement. Only code hashes are stored. Public registration always creates a student account; supervisors and administrators must be provisioned separately.
 
 For an approved first-production-admin bootstrap, use a one-time deployment command against the intended production database; do not enable public registration for privileged roles:
 ```powershell
@@ -78,7 +80,7 @@ npm test            # needs DATABASE_URL_TEST (migrations are applied automatica
 npm run build
 npm run check       # typecheck + lint + tests
 ```
-Tests cover: registration/login/invalid credentials/rate limiting/sessions; role restrictions (student → admin actions, unrelated projects, unassigned supervisors); project creation and membership; tasks and assignment rules; submissions, versions, structured feedback, review status transitions, meeting records and file access; notifications; admin controls; dashboard/report data; CSV formula safety; input validation.
+Tests cover: invitation-required student registration, code expiry/revocation/usage/concurrency and role restrictions; login/invalid credentials/rate limiting/sessions; unrelated-project and unassigned-supervisor access; project creation and membership; tasks and assignment rules; submissions, versions, structured feedback, review status transitions, meeting records and file access; notifications; admin controls; dashboard/report data; CSV formula safety; input validation.
 
 ## Security design (summary)
 - Passwords hashed with bcrypt (cost 12); 10–72 byte limit enforced.

@@ -3,6 +3,7 @@
 import { requireUser } from "@/lib/auth";
 import { invalid } from "@/lib/errors";
 import { createUser, resetUserPassword, setUserActive, setUserRole } from "@/server/services/admin";
+import { createRegistrationInvite, revokeRegistrationInvite, rotateRegistrationInvites } from "@/server/services/registration-invites";
 import { fields, guard, str, type ActionState } from "./_util";
 
 export async function createUserAction(_: ActionState, fd: FormData) {
@@ -27,4 +28,25 @@ export async function setActiveAction(_: ActionState, fd: FormData) {
 }
 export async function resetPasswordAction(_: ActionState, fd: FormData) {
   return guard(async () => { await resetUserPassword(await requireUser(), str(fd, "userId"), str(fd, "password")); return "Temporary password set. The user must change it at next sign-in."; });
+}
+
+export async function createRegistrationInviteAction(_: ActionState, fd: FormData) {
+  return guard(async () => {
+    const code = await createRegistrationInvite(await requireUser(), fields(fd, ["expiresInDays", "maxUses"]));
+    return `Registration code (copy now; it will not be shown again): ${code}`;
+  });
+}
+
+export async function rotateRegistrationInvitesAction(_: ActionState, fd: FormData) {
+  return guard(async () => {
+    const code = await rotateRegistrationInvites(await requireUser(), fields(fd, ["expiresInDays", "maxUses"]));
+    return `Previous active codes were revoked. New registration code (copy now; it will not be shown again): ${code}`;
+  });
+}
+
+export async function revokeRegistrationInviteAction(_: ActionState, fd: FormData) {
+  return guard(async () => {
+    await revokeRegistrationInvite(await requireUser(), str(fd, "inviteId"));
+    return "Registration code revoked.";
+  });
 }

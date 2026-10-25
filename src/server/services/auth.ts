@@ -1,6 +1,9 @@
 import bcrypt from "bcryptjs";
+import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import { AppError, conflict, isUniqueViolation } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { hashRegistrationInviteCode } from "@/lib/registration-invitation";
 import { hit, resetLimit } from "@/lib/rate-limit";
 import { deleteUserSessions } from "@/lib/session-store";
 import { changePasswordSchema, loginSchema, parse, registerSchema } from "@/server/validation";
@@ -10,17 +13,38 @@ import { audit } from "./audit";
 const BCRYPT_COST = 12;
 let dummyHash: Promise<string> | undefined;
 
-/** Public registration ALWAYS creates a STUDENT. Roles come from the server, never from the form. */
-export async function registerStudent(input: unknown) {
+/** Public registration only creates a STUDENT and atomically consumes a valid invitation. */
+export async function registerStudent(input: unknown, source: string) {
+  if (!isIP(source)) throw new AppError("RATE_LIMITED", "Unable to verify the request source. Please try again.");
+  const sourceHash = createHash("sha256").update(source).digest("hex");
+  if ((await hit(`register:source:${sourceHash}`, 900)) > 10) {
+    throw new AppError("RATE_LIMITED", "Too many registration attempts. Please try again in 15 minutes.");
+  }
   const d = parse(registerSchema, input);
-  if ((await hit("register:global", 3600)) > 200) throw new AppError("RATE_LIMITED", "Too many registrations right now. Please try again later.");
-  if (await prisma.user.findUnique({ where: { email: d.email }, select: { id: true } })) throw conflict("An account with that email already exists.");
+  const codeHash = hashRegistrationInviteCode(d.inviteCode);
   try {
-    const user = await prisma.user.create({
-      data: { name: d.name, email: d.email, passwordHash: await bcrypt.hash(d.password, BCRYPT_COST), role: "STUDENT" },
-      select: { id: true, name: true, email: true, role: true },
+    const user = await prisma.$transaction(async (tx) => {
+      const invite = await tx.registrationInviteCode.findUnique({ where: { codeHash }, select: { id: true, maxUses: true } });
+      if (!invite) throw new AppError("VALIDATION", "This registration invitation is invalid or no longer available.");
+
+      const consumed = await tx.registrationInviteCode.updateMany({
+        where: {
+          id: invite.id,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+          uses: { lt: invite.maxUses },
+        },
+        data: { uses: { increment: 1 } },
+      });
+      if (consumed.count !== 1) throw new AppError("VALIDATION", "This registration invitation is invalid or no longer available.");
+
+      const created = await tx.user.create({
+        data: { name: d.name, email: d.email, passwordHash: await bcrypt.hash(d.password, BCRYPT_COST), role: "STUDENT" },
+        select: { id: true, name: true, email: true, role: true },
+      });
+      await audit(tx, created.id, "auth.register", "User", created.id);
+      return created;
     });
-    await audit(prisma, user.id, "auth.register", "User", user.id);
     return user;
   } catch (e) {
     if (isUniqueViolation(e)) throw conflict("An account with that email already exists.");

@@ -40,7 +40,16 @@ export const passwordSchema = z
   .regex(/[A-Za-z]/, "Password must include a letter.")
   .regex(/[0-9]/, "Password must include a number.");
 
-export const registerSchema = z.object({ name: text("Name", 100).min(2, "Name is too short."), email: emailSchema, password: passwordSchema });
+export const registerSchema = z.object({
+  name: text("Name", 100).min(2, "Name is too short."),
+  email: emailSchema,
+  password: passwordSchema,
+  inviteCode: z.string().trim().regex(/^[A-Fa-f0-9]{32}$/, "Enter a valid registration invitation code."),
+});
+export const registrationInviteSettingsSchema = z.object({
+  expiresInDays: z.coerce.number().int().min(1).max(30),
+  maxUses: z.coerce.number().int().min(1).max(100),
+});
 export const loginSchema = z.object({ email: emailSchema, password: z.string().min(1, "Enter your password.").max(128) });
 export const changePasswordSchema = z.object({ current: z.string().min(1, "Enter your current password.").max(128), next: passwordSchema });
 

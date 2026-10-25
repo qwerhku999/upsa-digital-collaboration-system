@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { csvCell, toCsv } from "@/lib/csv";
 import { maxUploadBytes, validateUpload } from "@/lib/files";
+import { getRegistrationClientIp } from "@/lib/registration-client-ip";
 import { isOverdue, percent } from "@/lib/progress";
 import { safeDisplayName } from "@/lib/files";
 import { allowedTransitions } from "@/server/services/projects";
-import { passwordSchema, projectSchema, taskSchema } from "@/server/validation";
+import { passwordSchema, projectSchema, registerSchema, registrationInviteSettingsSchema, taskSchema } from "@/server/validation";
 
 describe("CSV export safety", () => {
   it("neutralises formula injection", () => {
@@ -53,6 +54,17 @@ describe("progress", () => {
 });
 
 describe("validation schemas", () => {
+  it("requires a well-formed registration invitation code", () => {
+    const input = { name: "Ama Mensah", email: "ama@test.example", password: "Strong-pass-1" };
+    expect(registerSchema.safeParse(input).success).toBe(false);
+    expect(registerSchema.safeParse({ ...input, inviteCode: "not-a-code" }).success).toBe(false);
+    expect(registerSchema.safeParse({ ...input, inviteCode: "a".repeat(32) }).success).toBe(true);
+  });
+  it("bounds registration invitation expiry and usage limits", () => {
+    expect(registrationInviteSettingsSchema.safeParse({ expiresInDays: "7", maxUses: "25" }).success).toBe(true);
+    expect(registrationInviteSettingsSchema.safeParse({ expiresInDays: "31", maxUses: "25" }).success).toBe(false);
+    expect(registrationInviteSettingsSchema.safeParse({ expiresInDays: "7", maxUses: "101" }).success).toBe(false);
+  });
   it("enforces password rules", () => {
     expect(passwordSchema.safeParse("short1").success).toBe(false);
     expect(passwordSchema.safeParse("onlyletterspassword").success).toBe(false);
@@ -64,6 +76,19 @@ describe("validation schemas", () => {
   it("rejects an invalid date and unknown priority", () => {
     expect(taskSchema.safeParse({ title: "T", dueDate: "not-a-date" }).success).toBe(false);
     expect(taskSchema.safeParse({ title: "T", priority: "URGENT" }).success).toBe(false);
+  });
+});
+
+describe("registration client IP", () => {
+  it("accepts a valid Vercel x-real-ip address", () => {
+    expect(getRegistrationClientIp(new Headers({ "x-real-ip": "203.0.113.10" }))).toBe("203.0.113.10");
+    expect(getRegistrationClientIp(new Headers({ "x-real-ip": "2001:db8::1" }))).toBe("2001:db8::1");
+  });
+  it("fails closed when x-real-ip is missing or invalid, even if forwarding headers are present", () => {
+    expect(getRegistrationClientIp(new Headers())).toBeNull();
+    expect(getRegistrationClientIp(new Headers({ "x-real-ip": "not-an-ip" }))).toBeNull();
+    expect(getRegistrationClientIp(new Headers({ "x-forwarded-for": "203.0.113.10" }))).toBeNull();
+    expect(getRegistrationClientIp(new Headers({ "x-real-ip": "203.0.113.10, 198.51.100.1" }))).toBeNull();
   });
 });
 

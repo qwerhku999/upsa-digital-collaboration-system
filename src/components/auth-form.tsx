@@ -22,7 +22,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           <div className="eyebrow">{reg ? "GET STARTED" : "WELCOME BACK"}</div>
           <h1 style={{ fontSize: 27 }}>{reg ? "Create your student account" : "Sign in to your workspace"}</h1>
           {reg ? (
-            <div className="field"><label htmlFor="name">Full name</label><input id="name" name="name" autoComplete="name" required minLength={2} maxLength={100} /></div>
+            <>
+              <p className="muted small">Student registration requires an invitation code from an administrator.</p>
+              <div className="field"><label htmlFor="inviteCode">Registration invitation code</label><input id="inviteCode" name="inviteCode" autoComplete="one-time-code" required minLength={32} maxLength={32} /></div>
+              <div className="field"><label htmlFor="name">Full name</label><input id="name" name="name" autoComplete="name" required minLength={2} maxLength={100} /></div>
+            </>
           ) : null}
           <div className="field"><label htmlFor="email">Email address</label><input id="email" name="email" type="email" autoComplete="email" required /></div>
           <div className="field">
@@ -32,7 +36,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           </div>
           <SubmitButton pendingText="Please wait…">{reg ? "Create account →" : "Sign in →"}</SubmitButton>
           <div className="switch">{reg ? "Already registered? " : "New student? "}<Link href={reg ? "/login" : "/register"}>{reg ? "Sign in" : "Create an account"}</Link></div>
-          <p className="muted small" style={{ textAlign: "center", marginTop: 20 }}>Supervisor and administrator accounts are created by an administrator.</p>
+          <p className="muted small" style={{ textAlign: "center", marginTop: 20 }}>{reg ? "Supervisor and administrator accounts are created separately by an administrator." : "Supervisor and administrator accounts are created by an administrator."}</p>
         </ActionForm>
       </section>
     </div>

@@ -1,9 +1,11 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { endSession, getSessionUser, requireUser, startSession } from "@/lib/auth";
-import { invalid } from "@/lib/errors";
+import { AppError, invalid } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { getRegistrationClientIp } from "@/lib/registration-client-ip";
 import { audit } from "@/server/services/audit";
 import { authenticate, changePassword, registerStudent } from "@/server/services/auth";
 import { guard, str, type ActionState } from "./_util";
@@ -18,7 +20,15 @@ export async function loginAction(_: ActionState, fd: FormData) {
 
 export async function registerAction(_: ActionState, fd: FormData) {
   return guard(async () => {
-    const user = await registerStudent({ name: str(fd, "name"), email: str(fd, "email"), password: str(fd, "password") });
+    const requestHeaders = await headers();
+    const source = getRegistrationClientIp(requestHeaders);
+    if (!source) throw new AppError("RATE_LIMITED", "Unable to verify the request source. Please try again.");
+    const user = await registerStudent({
+      name: str(fd, "name"),
+      email: str(fd, "email"),
+      password: str(fd, "password"),
+      inviteCode: str(fd, "inviteCode"),
+    }, source);
     await startSession(user.id);
     redirect("/dashboard");
   });

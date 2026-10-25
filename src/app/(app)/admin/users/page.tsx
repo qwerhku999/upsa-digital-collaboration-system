@@ -1,10 +1,11 @@
 import type { UserRole } from "@prisma/client";
-import { createUserAction, resetPasswordAction, setActiveAction, setRoleAction } from "@/app/actions/admin";
+import { createRegistrationInviteAction, createUserAction, resetPasswordAction, revokeRegistrationInviteAction, rotateRegistrationInvitesAction, setActiveAction, setRoleAction } from "@/app/actions/admin";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { Card, Empty, PageHead, Pagination } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { fmtDate, label, one } from "@/lib/format";
 import { listUsers } from "@/server/services/admin";
+import { listRegistrationInvites, registrationInviteDefaults } from "@/server/services/registration-invites";
 
 export const metadata = { title: "Users | Project Hub" };
 const ROLES: UserRole[] = ["STUDENT", "SUPERVISOR", "ADMIN"];
@@ -18,7 +19,10 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   const activeRaw = one(sp.active);
   const active = activeRaw === "yes" ? true : activeRaw === "no" ? false : undefined;
   const page = Math.max(1, Number(one(sp.page)) || 1);
-  const { items, pages, total } = await listUsers(user, { q, role, active, page });
+  const [{ items, pages, total }, invites] = await Promise.all([
+    listUsers(user, { q, role, active, page }),
+    listRegistrationInvites(user),
+  ]);
   return (
     <>
       <PageHead eyebrow="ADMINISTRATION" title="User accounts" />
@@ -74,6 +78,44 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           <SubmitButton>Create account</SubmitButton>
           <p className="muted small">Share the temporary password through a secure channel. The user must change it at first sign-in.</p>
         </ActionForm>
+      </Card>
+      <Card title="Student registration invitations">
+        <p className="muted small">Codes are shown only once. Share them privately with intended students. Each code expires within 30 days and can be used at most 100 times.</p>
+        <ActionForm action={createRegistrationInviteAction}>
+          <div className="row">
+            <div className="field"><label htmlFor="invite-expiry">Expires in days</label><input id="invite-expiry" name="expiresInDays" type="number" min={1} max={30} defaultValue={registrationInviteDefaults.expiresInDays} required /></div>
+            <div className="field"><label htmlFor="invite-uses">Maximum registrations</label><input id="invite-uses" name="maxUses" type="number" min={1} max={100} defaultValue={registrationInviteDefaults.maxUses} required /></div>
+          </div>
+          <SubmitButton>Create registration code</SubmitButton>
+        </ActionForm>
+        <ActionForm action={rotateRegistrationInvitesAction}>
+          <input type="hidden" name="expiresInDays" value={registrationInviteDefaults.expiresInDays} />
+          <input type="hidden" name="maxUses" value={registrationInviteDefaults.maxUses} />
+          <ConfirmButton message="Revoke every active registration code and issue a replacement?">Rotate codes</ConfirmButton>
+        </ActionForm>
+        {invites.length === 0 ? <Empty>No registration codes have been created.</Empty> : (
+          <div className="table-wrap"><table><caption className="sr-only">Student registration invitation codes</caption>
+            <thead><tr><th>Created</th><th>Expires</th><th>Usage</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>{invites.map((invite) => {
+              const expired = invite.expiresAt <= new Date();
+              const status = invite.revokedAt ? "Revoked" : expired ? "Expired" : invite.uses >= invite.maxUses ? "Used" : "Active";
+              return (
+                <tr key={invite.id}>
+                  <td>{fmtDate(invite.createdAt)}</td>
+                  <td>{fmtDate(invite.expiresAt)}</td>
+                  <td>{invite.uses} / {invite.maxUses}</td>
+                  <td>{status}</td>
+                  <td>{status === "Active" ? (
+                    <ActionForm action={revokeRegistrationInviteAction}>
+                      <input type="hidden" name="inviteId" value={invite.id} />
+                      <ConfirmButton message="Revoke this registration code?">Revoke</ConfirmButton>
+                    </ActionForm>
+                  ) : <span className="muted small">—</span>}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        )}
       </Card>
     </>
   );
